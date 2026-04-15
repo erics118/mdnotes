@@ -107,9 +107,26 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
 
         uncached = 0
 
+        # Recover already-written pages from an interrupted previous run
         pages_done = []
+        resume_from = 1
+        if not only_download and md_path.exists():
+            existing = md_path.read_text()
+            if "<!-- mdnotes: in progress -->" in existing:
+                # Parse out completed page blocks — each starts with <!-- page N/total -->
+                import re
+                blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
+                                    existing, re.DOTALL)
+                if blocks:
+                    pages_done = blocks
+                    resume_from = len(blocks) + 1
+                    print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
 
         for page_num in range(1, total + 1):
+            if page_num < resume_from:
+                print(f"{indent}    Page {page_num}/{total} — already written")
+                continue
+
             key = pdf_page_hash(pdf_path, page_num)
             cached = cache.get(key)
             if cached is not None:
