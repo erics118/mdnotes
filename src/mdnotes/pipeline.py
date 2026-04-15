@@ -96,23 +96,32 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
         total = pdf_page_count(pdf_path)
         print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
 
-        parts = []
         uncached = 0
+
+        pages_done = []
+
         for page_num in range(1, total + 1):
             key = pdf_page_hash(pdf_path, page_num)
             cached = cache.get(key)
             if cached is not None:
                 print(f"{indent}    Page {page_num}/{total} — cached")
-                parts.append(cached)
+                page_md = cached
             else:
                 uncached += 1
                 if only_download:
                     print(f"{indent}    Page {page_num}/{total} — would transcribe")
+                    continue
                 else:
                     print(f"{indent}    Page {page_num}/{total} — transcribing...")
                     img = rasterize_page(pdf_path, page_num, dpi=dpi)
-                    md = transcribe_page(img, cache=cache, client=client, cache_key=key)
-                    parts.append(md)
+                    page_md = transcribe_page(img, cache=cache, client=client, cache_key=key)
+
+            if not only_download:
+                pages_done.append(f"<!-- page {page_num}/{total} -->\n{page_md}")
+                # Rewrite file after each page with marker at end — marker absence = complete
+                md_path.write_text(
+                    "\n\n---\n\n".join(pages_done) + "\n\n<!-- mdnotes: in progress -->"
+                )
 
         pdf_path.unlink(missing_ok=True)  # clean up downloaded PDF
 
@@ -124,8 +133,8 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 print(f"{indent}  All pages cached — nothing to transcribe")
                 result.skipped.append(name)
         else:
-            markdown = "\n\n---\n\n".join(parts)
-            md_path.write_text(markdown)
+            # Write final file without the in-progress marker
+            md_path.write_text("\n\n---\n\n".join(pages_done))
             result.processed.append(name)
             print(f"{indent}  Done → {md_path}")
     except Exception as exc:
