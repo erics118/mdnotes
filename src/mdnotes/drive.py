@@ -25,6 +25,25 @@ def list_goodnotes_pdfs(service, folder_id: str) -> list[dict]:
     return result.get("files", [])
 
 
+def list_items(service, folder_id: str) -> tuple[list[dict], list[dict]]:
+    """Return (subfolders, pdfs) inside folder_id, both sorted by name."""
+    result = service.files().list(
+        q=f"'{folder_id}' in parents and trashed=false and ("
+          f"mimeType='application/vnd.google-apps.folder' or mimeType='application/pdf')",
+        fields="files(id, name, mimeType, modifiedTime)",
+    ).execute()
+    items = result.get("files", [])
+    folders = sorted(
+        [f for f in items if f["mimeType"] == "application/vnd.google-apps.folder"],
+        key=lambda f: f["name"],
+    )
+    pdfs = sorted(
+        [f for f in items if f["mimeType"] == "application/pdf"],
+        key=lambda f: f["name"],
+    )
+    return folders, pdfs
+
+
 def download_pdf(service, file_id: str, file_name: str, output_dir: Path) -> Path:
     """Download a Drive file by ID to output_dir. Returns the local path."""
     dest = output_dir / file_name
