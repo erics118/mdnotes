@@ -22,7 +22,9 @@ def main():
               help="Path to transcription cache JSON.")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Show what would be synced without downloading or transcribing.")
-def sync(output_dir, folder_name, dpi, cache, dry_run):
+@click.option("--only-download", is_flag=True, default=False,
+              help="Download and check per-page cache but skip transcription.")
+def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
     """Download PDFs from Google Drive and transcribe handwriting to Markdown."""
     service = get_drive_service()
     result = run_pipeline(
@@ -32,6 +34,7 @@ def sync(output_dir, folder_name, dpi, cache, dry_run):
         cache_path=Path(cache),
         dpi=dpi,
         dry_run=dry_run,
+        only_download=only_download,
     )
 
     if result.processed:
