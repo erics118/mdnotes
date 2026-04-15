@@ -11,6 +11,7 @@ dependencies = [
     "google-api-python-client>=2.120",
     "google-auth-oauthlib>=1.2",
     "click>=8.1",
+    "pypdf>=4",
 ]
 
 [project.scripts]
