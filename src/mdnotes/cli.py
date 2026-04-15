@@ -13,13 +13,15 @@ def main():
 @main.command()
 @click.option("--output-dir", default=str(Path.home() / "notes"), show_default=True,
               help="Directory to write .md files into.")
-@click.option("--folder-name", default="GoodNotes 5", show_default=True,
+@click.option("--folder-name", required=True,
               help="Name of the GoodNotes folder in Google Drive.")
 @click.option("--dpi", default=150, show_default=True,
               help="Rasterization DPI (higher = better quality, more tokens).")
 @click.option("--cache", default=str(DEFAULT_CACHE), show_default=True,
               help="Path to transcription cache JSON.")
-def sync(output_dir, folder_name, dpi, cache):
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be synced without downloading or transcribing.")
+def sync(output_dir, folder_name, dpi, cache, dry_run):
     """Download PDFs from Google Drive and transcribe handwriting to Markdown."""
     service = get_drive_service()
     result = run_pipeline(
@@ -28,6 +30,7 @@ def sync(output_dir, folder_name, dpi, cache):
         folder_name=folder_name,
         cache_path=Path(cache),
         dpi=dpi,
+        dry_run=dry_run,
     )
 
     if result.processed:

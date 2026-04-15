@@ -5,9 +5,10 @@ from pathlib import Path
 import anthropic
 
 from mdnotes.cache import TranscriptionCache
-from mdnotes.drive import find_goodnotes_folder_id, list_goodnotes_pdfs, download_pdf
-from mdnotes.rasterize import rasterize_pdf
-from mdnotes.transcribe import transcribe_pdf_pages
+from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
+from mdnotes.prefs import SyncPrefs, YES, NO
+from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
+from mdnotes.transcribe import transcribe_page
 
 DEFAULT_CACHE = Path.home() / ".cache" / "mdnotes" / "transcriptions.json"
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -28,44 +29,201 @@ def _drive_mtime(modified_time_str: str) -> datetime:
         return datetime.strptime(modified_time_str[:19] + "Z", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
+def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
+    """Return True if local .md is newer than the Drive file's modifiedTime."""
+    if not md_path.exists():
+        return False
+    drive_mtime = _drive_mtime(file_meta["modifiedTime"])
+    local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
+    return local_mtime > drive_mtime
+
+
+def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs) -> str:
+    """
+    Ask what to do with a folder. Returns "yes", "no", or "select".
+    Checks stored preferences first; if remembered, uses that without prompting.
+    """
+    stored = prefs.get(folder_id)
+    if stored == YES:
+        print(f"{indent}Folder '{name}' → syncing all (remembered)")
+        return YES
+    if stored == NO:
+        print(f"{indent}Folder '{name}' → skipping (remembered)")
+        return NO
+
+    while True:
+        raw = input(f"{indent}Folder '{name}'? [y]es / [n]o / [s]elect / [Y]es+remember / [N]o+remember: ").strip()
+        if raw == "y":
+            return YES
+        if raw == "n":
+            return NO
+        if raw == "s":
+            return "select"
+        if raw == "Y":
+            prefs.set(folder_id, YES)
+            print(f"{indent}  (remembered: always sync '{name}')")
+            return YES
+        if raw == "N":
+            prefs.set(folder_id, NO)
+            print(f"{indent}  (remembered: always skip '{name}')")
+            return NO
+
+
+def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionCache,
+               client: anthropic.Anthropic, result: PipelineResult, dpi: int, indent: str) -> None:
+    """Download, rasterize, transcribe, and save one PDF, page by page with cache."""
+    name = file_meta["name"]
+    stem = Path(name).stem
+    md_path = output_dir / f"{stem}.md"
+
+    if _is_up_to_date(file_meta, md_path):
+        print(f"{indent}  '{name}' — up-to-date, skipping")
+        result.skipped.append(name)
+        return
+
+    try:
+        print(f"{indent}  Downloading '{name}'...")
+        pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=name, output_dir=output_dir)
+
+        total = pdf_page_count(pdf_path)
+        print(f"{indent}  Processing {total} page{'s' if total != 1 else ''}...")
+
+        parts = []
+        for page_num in range(1, total + 1):
+            key = pdf_page_hash(pdf_path, page_num)
+            cached = cache.get(key)
+            if cached is not None:
+                print(f"{indent}    Page {page_num}/{total} — cached")
+                parts.append(cached)
+            else:
+                print(f"{indent}    Page {page_num}/{total} — transcribing...")
+                img = rasterize_page(pdf_path, page_num, dpi=dpi)
+                md = transcribe_page(img, cache=cache, client=client, cache_key=key)
+                parts.append(md)
+
+        markdown = "\n\n---\n\n".join(parts)
+        md_path.write_text(markdown)
+        pdf_path.unlink(missing_ok=True)  # clean up downloaded PDF
+        result.processed.append(name)
+        print(f"{indent}  Done → {md_path}")
+    except Exception as exc:
+        print(f"{indent}  Error: {exc}")
+        result.errors.append(f"{name}: {exc}")
+
+
+def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
+                 cache: TranscriptionCache, client: anthropic.Anthropic,
+                 prefs: SyncPrefs, result: PipelineResult, dpi: int,
+                 indent: str = "", mode: str | None = None,
+                 dry_run: bool = False) -> None:
+    """
+    Recursively sync a Drive folder.
+    mode: "yes" = sync all without asking, "no" = skip all, None = ask
+    dry_run: prompts work normally but nothing is downloaded or transcribed
+    """
+    subfolders, pdfs = list_items(service, folder_id)
+
+    if mode is None:
+        if not subfolders and not pdfs:
+            print(f"{indent}Folder '{folder_name}' is empty, skipping")
+            return
+        mode = _ask_folder(folder_name, indent, folder_id, prefs)
+
+    if mode == NO:
+        result.skipped.append(folder_name)
+        return
+
+    folder_output = output_dir / folder_name
+    if not dry_run:
+        folder_output.mkdir(parents=True, exist_ok=True)
+
+    # Recurse into subfolders
+    for sub in subfolders:
+        _sync_folder(
+            service, sub["id"], sub["name"], folder_output,
+            cache, client, prefs, result, dpi,
+            indent=indent + "  ",
+            mode=mode if mode == YES else None,  # propagate "yes" but re-ask in "select" mode
+            dry_run=dry_run,
+        )
+
+    # Sync PDFs
+    for pdf in pdfs:
+        name = pdf["name"]
+        stem = Path(name).stem
+        md_path = folder_output / f"{stem}.md"
+
+        if mode == "select":
+            if _is_up_to_date(pdf, md_path):
+                print(f"{indent}  '{name}' — up-to-date, skipping")
+                result.skipped.append(name)
+                continue
+            answer = input(f"{indent}  Sync '{name}'? [y/N] ").strip().lower()
+            if answer != "y":
+                print(f"{indent}  Skipping '{name}'")
+                result.skipped.append(name)
+                continue
+
+        if dry_run:
+            if _is_up_to_date(pdf, md_path):
+                print(f"{indent}  '{name}' — up-to-date")
+                result.skipped.append(name)
+            else:
+                print(f"{indent}  '{name}' — would sync")
+                result.processed.append(name)
+        else:
+            _sync_file(service, pdf, folder_output, cache, client, result, dpi, indent)
+
+
 def run_pipeline(
     service,
     output_dir: Path,
-    folder_name: str = "GoodNotes 5",
+    folder_name: str,
     cache_path: Path = DEFAULT_CACHE,
     dpi: int = 150,
+    dry_run: bool = False,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     cache = TranscriptionCache(cache_path)
     client = anthropic.Anthropic()
+    prefs = SyncPrefs()
     result = PipelineResult()
 
-    folder_id = find_goodnotes_folder_id(service, folder_name=folder_name)
-    pdf_files = list_goodnotes_pdfs(service, folder_id=folder_id)
+    if dry_run:
+        print("(dry run — nothing will be downloaded or transcribed)\n")
 
-    for file_meta in pdf_files:
-        name = file_meta["name"]
+    root_id = find_goodnotes_folder_id(service, folder_name=folder_name)
+
+    # List top-level contents and walk them
+    subfolders, pdfs = list_items(service, root_id)
+
+    for sub in subfolders:
+        _sync_folder(
+            service, sub["id"], sub["name"], output_dir,
+            cache, client, prefs, result, dpi,
+            dry_run=dry_run,
+        )
+
+    # PDFs sitting directly in the root (not in a subfolder)
+    for pdf in pdfs:
+        name = pdf["name"]
         stem = Path(name).stem
         md_path = output_dir / f"{stem}.md"
-
-        # Skip if local markdown is newer than Drive file
-        drive_mtime = _drive_mtime(file_meta["modifiedTime"])
-        if md_path.exists():
-            local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
-            if local_mtime > drive_mtime:
-                result.skipped.append(name)
-                continue
-
-        try:
-            pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=name, output_dir=output_dir)
-            pages = rasterize_pdf(pdf_path, dpi=dpi)
-            markdown = transcribe_pdf_pages(pages, cache=cache, client=client)
-            md_path.write_text(markdown)
-            pdf_path.unlink(missing_ok=True)  # clean up downloaded PDF
+        if _is_up_to_date(pdf, md_path):
+            print(f"'{name}' — up-to-date, skipping")
+            result.skipped.append(name)
+            continue
+        answer = input(f"Sync '{name}'? [y/N] ").strip().lower()
+        if answer != "y":
+            print(f"Skipping '{name}'")
+            result.skipped.append(name)
+            continue
+        if dry_run:
+            print(f"'{name}' — would sync")
             result.processed.append(name)
-        except Exception as exc:
-            result.errors.append(f"{name}: {exc}")
+        else:
+            _sync_file(service, pdf, output_dir, cache, client, result, dpi, indent="")
 
     return result
