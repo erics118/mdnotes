@@ -3,6 +3,7 @@ from pathlib import Path
 import click
 from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
+from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
 
 
 @click.group()
@@ -41,3 +42,44 @@ def sync(output_dir, folder_name, dpi, cache, dry_run):
         click.echo("Errors:", err=True)
         for e in result.errors:
             click.echo(f"  {e}", err=True)
+
+
+@main.command()
+def prefs():
+    """View and edit remembered folder sync preferences."""
+    p = SyncPrefs()
+
+    while True:
+        entries = p.all()
+
+        click.echo("")
+        if not entries:
+            click.echo("No saved preferences.")
+        else:
+            click.echo("Saved folder preferences:\n")
+            for i, (fid, name, choice) in enumerate(entries, 1):
+                label = CHOICE_LABELS.get(choice, choice)
+                click.echo(f"  {i}. {name}  →  {label}")
+
+        click.echo("")
+        click.echo("  [number] clear a preference")
+        click.echo("  [a]      reset all")
+        click.echo("  [q]      quit")
+        click.echo("")
+
+        raw = input("Choice: ").strip().lower()
+
+        if raw == "q" or raw == "":
+            break
+        elif raw == "a":
+            if input("Reset all preferences? [y/N] ").strip().lower() == "y":
+                p.reset()
+                click.echo("All preferences cleared.")
+        elif raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(entries):
+                fid, name, choice = entries[idx]
+                p.clear(fid)
+                click.echo(f"Cleared preference for '{name}'.")
+            else:
+                click.echo("Invalid number.")

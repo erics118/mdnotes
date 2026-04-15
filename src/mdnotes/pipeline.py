@@ -60,11 +60,11 @@ def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs) -> str
         if raw == "s":
             return "select"
         if raw == "Y":
-            prefs.set(folder_id, YES)
+            prefs.set(folder_id, YES, name=name)
             print(f"{indent}  (remembered: always sync '{name}')")
             return YES
         if raw == "N":
-            prefs.set(folder_id, NO)
+            prefs.set(folder_id, NO, name=name)
             print(f"{indent}  (remembered: always skip '{name}')")
             return NO
 
