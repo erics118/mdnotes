@@ -31,8 +31,11 @@ def _drive_mtime(modified_time_str: str) -> datetime:
 
 
 def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
-    """Return True if local .md is newer than the Drive file's modifiedTime."""
+    """Return True if local .md is newer than the Drive file's modifiedTime and complete."""
     if not md_path.exists():
+        return False
+    # A file with the in-progress marker was interrupted — always re-sync
+    if "<!-- mdnotes: in progress -->" in md_path.read_text():
         return False
     drive_mtime = _drive_mtime(file_meta["modifiedTime"])
     local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
