@@ -5,11 +5,12 @@ from pathlib import Path
 DEFAULT_PREFS = Path.home() / ".config" / "mdnotes" / "prefs.json"
 
 # Stored preference values for a folder
-YES = "yes"    # always sync without asking
-NO = "no"      # always skip without asking
+YES = "yes"       # always sync without asking
+NO = "no"         # always skip without asking
+SELECT = "select" # always enter select mode without asking
 # absence of a key = always ask
 
-CHOICE_LABELS = {YES: "always sync", NO: "always skip"}
+CHOICE_LABELS = {YES: "always sync", NO: "always skip", SELECT: "always select"}
 
 
 class SyncPrefs:

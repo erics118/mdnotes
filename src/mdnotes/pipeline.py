@@ -6,7 +6,7 @@ import anthropic
 
 from mdnotes.cache import TranscriptionCache
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
-from mdnotes.prefs import SyncPrefs, YES, NO
+from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
 import tempfile
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
 from mdnotes.transcribe import transcribe_page
@@ -51,23 +51,29 @@ def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs) -> str
     if stored == NO:
         print(f"{indent}Folder '{name}' → skipping (remembered)")
         return NO
+    if stored == SELECT:
+        print(f"{indent}Folder '{name}' → selecting (remembered)")
+        return SELECT
 
     while True:
-        raw = input(f"{indent}Folder '{name}'? [y]es / [n]o / [s]elect / [Y]es+remember / [N]o+remember: ").strip()
-        if raw == "y":
+        raw = input(f"{indent}Folder '{name}'? [y/n/s] (uppercase to remember): ").strip()
+        choice = raw.lower()
+        remember = raw.isupper() and len(raw) == 1
+        if choice == "y":
+            if remember:
+                prefs.set(folder_id, YES, name=name)
+                print(f"{indent}  (remembered)")
             return YES
-        if raw == "n":
+        if choice == "n":
+            if remember:
+                prefs.set(folder_id, NO, name=name)
+                print(f"{indent}  (remembered)")
             return NO
-        if raw == "s":
-            return "select"
-        if raw == "Y":
-            prefs.set(folder_id, YES, name=name)
-            print(f"{indent}  (remembered: always sync '{name}')")
-            return YES
-        if raw == "N":
-            prefs.set(folder_id, NO, name=name)
-            print(f"{indent}  (remembered: always skip '{name}')")
-            return NO
+        if choice == "s":
+            if remember:
+                prefs.set(folder_id, SELECT, name=name)
+                print(f"{indent}  (remembered)")
+            return SELECT
 
 
 def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionCache,
@@ -175,7 +181,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             service, sub["id"], sub["name"], folder_output,
             cache, client, prefs, result, dpi,
             indent=indent + "  ",
-            mode=mode if mode == YES else None,  # propagate "yes" but re-ask in "select" mode
+            mode=mode if mode == YES else None,  # propagate "yes" but re-ask in "select"/"no" mode
             dry_run=dry_run, only_download=only_download,
         )
 
