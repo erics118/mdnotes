@@ -3,6 +3,7 @@ credentials/token.json
 __pycache__/
 *.pyc
 .env
+.envrc
 dist/
 *.egg-info/
 /tmp/
