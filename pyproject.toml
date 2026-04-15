@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdnotes"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.25",
+    "google-api-python-client>=2.120",
+    "google-auth-oauthlib>=1.2",
+    "click>=8.1",
+]
+
+[project.scripts]
+mdnotes = "mdnotes.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-mock>=3.12",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

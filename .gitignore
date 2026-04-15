@@ -1,0 +1,8 @@
+credentials/*.json
+credentials/token.json
+__pycache__/
+*.pyc
+.env
+dist/
+*.egg-info/
+/tmp/
