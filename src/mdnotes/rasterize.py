@@ -1,9 +1,13 @@
 import hashlib
+import logging
 import subprocess
 import tempfile
 import shutil
 from pathlib import Path
 from pypdf import PdfReader
+
+# pypdf emits warnings for minor PDF corruption common in GoodNotes exports
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
 class RasterizeError(Exception):
