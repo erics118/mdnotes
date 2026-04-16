@@ -30,9 +30,14 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
     """Download PDFs from Google Drive and transcribe handwriting to Markdown."""
     p = SyncPrefs()
 
+    # Read saved settings once
+    saved_folder = p.get_setting("folder_name")
+    saved_output = p.get_setting("output_dir")
+    saved_dpi    = p.get_setting("dpi")
+
     # Resolve folder_name: CLI flag > saved pref > error
     if folder_name is None:
-        folder_name = p.get_setting("folder_name")
+        folder_name = saved_folder
     if folder_name is None:
         raise click.UsageError(
             "No folder name configured. Pass --folder-name on first run to save it."
@@ -40,19 +45,18 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
 
     # Resolve output_dir: CLI flag > saved pref > default
     if output_dir is None:
-        output_dir = p.get_setting("output_dir") or str(Path.home() / "notes")
+        output_dir = saved_output or str(Path.home() / "notes")
 
     # Resolve dpi: CLI flag > saved pref > default
     if dpi is None:
-        saved_dpi = p.get_setting("dpi")
         dpi = int(saved_dpi) if saved_dpi is not None else DEFAULT_DPI
 
     # Persist any newly provided values
-    if folder_name and folder_name != p.get_setting("folder_name"):
+    if folder_name and folder_name != saved_folder:
         p.set_setting("folder_name", folder_name)
-    if output_dir and output_dir != p.get_setting("output_dir"):
+    if output_dir and output_dir != saved_output:
         p.set_setting("output_dir", output_dir)
-    if dpi and str(dpi) != p.get_setting("dpi"):
+    if dpi and str(dpi) != saved_dpi:
         p.set_setting("dpi", str(dpi))
 
     click.echo(f"folder: {folder_name}  |  output: {output_dir}  |  DPI: {dpi}\n")
