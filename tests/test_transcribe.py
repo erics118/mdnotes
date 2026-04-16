@@ -26,6 +26,18 @@ def test_transcribe_page_calls_claude(tmp_path):
     mock_client.messages.create.assert_called_once()
 
 
+def test_transcribe_page_with_explicit_cache_key(tmp_path):
+    """When cache_key is given, that key is used instead of hashing image_bytes."""
+    cache = _make_cache(tmp_path)
+    cache.set("pdf-hash:dpi=150", "pre-cached content")
+    mock_client = MagicMock()
+
+    result = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client, cache_key="pdf-hash:dpi=150")
+
+    assert result == "pre-cached content"
+    mock_client.messages.create.assert_not_called()
+
+
 def test_transcribe_page_uses_cache_on_second_call(tmp_path):
     """Second call with same image bytes should not call the API."""
     cache = _make_cache(tmp_path)
