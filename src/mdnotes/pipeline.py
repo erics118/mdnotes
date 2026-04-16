@@ -285,7 +285,8 @@ def run_pipeline(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     cache = TranscriptionCache(cache_path)
-    client = anthropic.Anthropic()
+    # Client is only needed when actually transcribing
+    client = None if (dry_run or only_download) else anthropic.Anthropic()
     prefs = SyncPrefs()
     result = PipelineResult()
 
