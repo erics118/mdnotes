@@ -13,11 +13,15 @@ SELECT = "select" # always enter select mode without asking
 CHOICE_LABELS = {YES: "always sync", NO: "always skip", SELECT: "always select"}
 
 
+_SETTINGS_KEY = "__settings__"
+
+
 class SyncPrefs:
     def __init__(self, path: Path = DEFAULT_PREFS):
         self._path = Path(path)
-        # Format: {folder_id: {"choice": "yes"/"no", "name": "Folder Name"}}
+        # Format: {folder_id: {"choice": "yes"/"no"/"select", "name": "Full / Path"}}
         # Migrates transparently from old flat format {folder_id: "yes"/"no"}
+        # Settings stored under reserved key __settings__: {"folder_name": ..., "output_dir": ...}
         self._data: dict[str, dict] = {}
         if self._path.exists():
             raw = json.loads(self._path.read_text())
@@ -29,13 +33,24 @@ class SyncPrefs:
                     self._data[k] = v
 
     def get(self, folder_id: str) -> str | None:
-        """Return stored choice for folder_id ("yes"/"no"), or None if not set."""
+        """Return stored choice for folder_id ("yes"/"no"/"select"), or None if not set."""
         entry = self._data.get(folder_id)
         return entry["choice"] if entry else None
 
     def set(self, folder_id: str, value: str, name: str = "") -> None:
-        """Store YES or NO preference for folder_id with its display name."""
+        """Store sync preference for folder_id with its full display path."""
         self._data[folder_id] = {"choice": value, "name": name or folder_id}
+        self._save()
+
+    def get_setting(self, key: str) -> str | None:
+        """Return a named setting (e.g. 'folder_name', 'output_dir'), or None."""
+        return self._data.get(_SETTINGS_KEY, {}).get(key)
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Persist a named setting."""
+        if _SETTINGS_KEY not in self._data:
+            self._data[_SETTINGS_KEY] = {}
+        self._data[_SETTINGS_KEY][key] = value
         self._save()
 
     def clear(self, folder_id: str) -> None:
@@ -50,9 +65,11 @@ class SyncPrefs:
         self._save()
 
     def all(self) -> list[tuple[str, str, str]]:
-        """Return list of (folder_id, name, choice) sorted by name."""
+        """Return list of (folder_id, name, choice) sorted by name, excluding settings."""
         return sorted(
-            [(fid, entry["name"], entry["choice"]) for fid, entry in self._data.items()],
+            [(fid, entry["name"], entry["choice"])
+             for fid, entry in self._data.items()
+             if fid != _SETTINGS_KEY],
             key=lambda x: x[1].lower(),
         )
 

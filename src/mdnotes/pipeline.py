@@ -52,10 +52,13 @@ def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
     return local_mtime > drive_mtime
 
 
-def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs) -> str:
+def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs,
+                full_path: str) -> str:
     """
     Ask what to do with a folder. Returns "yes", "no", or "select".
     Checks stored preferences first; if remembered, uses that without prompting.
+    full_path: slash-separated path used as the human-readable label in saved prefs
+               e.g. "GoodNotes 5 / MATH / Linear Algebra"
     """
     stored = prefs.get(folder_id)
     if stored == YES:
@@ -74,17 +77,17 @@ def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs) -> str
         remember = raw.isupper() and len(raw) == 1
         if choice == "y":
             if remember:
-                prefs.set(folder_id, YES, name=name)
+                prefs.set(folder_id, YES, name=full_path)
                 print(f"{indent}  (remembered)")
             return YES
         if choice == "n":
             if remember:
-                prefs.set(folder_id, NO, name=name)
+                prefs.set(folder_id, NO, name=full_path)
                 print(f"{indent}  (remembered)")
             return NO
         if choice == "s":
             if remember:
-                prefs.set(folder_id, SELECT, name=name)
+                prefs.set(folder_id, SELECT, name=full_path)
                 print(f"{indent}  (remembered)")
             return SELECT
 
@@ -203,20 +206,23 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                  cache: TranscriptionCache, client: anthropic.Anthropic,
                  prefs: SyncPrefs, result: PipelineResult, dpi: int,
                  indent: str = "", mode: str | None = None,
-                 dry_run: bool = False, only_download: bool = False) -> None:
+                 dry_run: bool = False, only_download: bool = False,
+                 folder_path: str | None = None) -> None:
     """
     Recursively sync a Drive folder.
     mode: "yes" = sync all without asking, "no" = skip all, None = ask
     dry_run: prompts work normally but nothing is downloaded or transcribed
     only_download: download and check per-page cache but skip transcription
+    folder_path: full slash-separated path for display in saved prefs
     """
+    full_path = folder_path or folder_name
     subfolders, pdfs = list_items(service, folder_id)
 
     if mode is None:
         if not subfolders and not pdfs:
             print(f"{indent}Folder '{folder_name}' is empty, skipping")
             return
-        mode = _ask_folder(folder_name, indent, folder_id, prefs)
+        mode = _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
 
     if mode == NO:
         result.skipped.append(folder_name)
@@ -234,6 +240,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             indent=indent + "  ",
             mode=mode if mode == YES else None,  # propagate "yes" but re-ask in "select"/"no" mode
             dry_run=dry_run, only_download=only_download,
+            folder_path=f"{full_path} / {sub['name']}",
         )
 
     # Sync PDFs
@@ -297,6 +304,7 @@ def run_pipeline(
             service, sub["id"], sub["name"], output_dir,
             cache, client, prefs, result, dpi,
             dry_run=dry_run, only_download=only_download,
+            folder_path=f"{folder_name} / {sub['name']}",
         )
 
     # PDFs sitting directly in the root (not in a subfolder)
