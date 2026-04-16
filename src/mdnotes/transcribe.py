@@ -50,16 +50,3 @@ def transcribe_page(
     markdown = response.content[0].text
     cache.set(h, markdown)
     return markdown
-
-
-def transcribe_pdf_pages(
-    pages: list[tuple[int, bytes]],
-    cache: TranscriptionCache,
-    client: anthropic.Anthropic | None = None,
-) -> str:
-    """
-    Transcribe all pages of a PDF and return stitched Markdown.
-    pages: list of (page_number, image_bytes) tuples.
-    """
-    parts = [transcribe_page(img, cache=cache, client=client) for _, img in pages]
-    return "\n\n---\n\n".join(parts)
