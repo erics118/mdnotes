@@ -31,12 +31,21 @@ def _drive_mtime(modified_time_str: str) -> datetime:
 
 
 def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
-    """Return True if local .md is newer than the Drive file's modifiedTime and complete."""
+    """Return True if local .md was synced from the same (or newer) Drive version and is complete."""
     if not md_path.exists():
         return False
+    text = md_path.read_text()
     # A file with the in-progress marker was interrupted — always re-sync
-    if "<!-- mdnotes: in progress -->" in md_path.read_text():
+    if "<!-- mdnotes: in progress" in text:
         return False
+    # Prefer comparing recorded Drive mtime embedded in the file header
+    import re
+    m = re.search(r"<!-- mdnotes: synced: ([^-].*?) -->", text)
+    if m:
+        recorded = _drive_mtime(m.group(1))
+        current = _drive_mtime(file_meta["modifiedTime"])
+        return recorded >= current
+    # Fallback for files written before the synced-header feature
     drive_mtime = _drive_mtime(file_meta["modifiedTime"])
     local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
     return local_mtime > drive_mtime
@@ -112,22 +121,28 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
         resume_from = 1
         if not only_download and md_path.exists():
             existing = md_path.read_text()
-            if "<!-- mdnotes: in progress -->" in existing:
-                # Parse out completed page blocks — each starts with <!-- page N/total -->
+            if "<!-- mdnotes: in progress" in existing:
                 import re
-                blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
-                                    existing, re.DOTALL)
-                if blocks:
-                    pages_done = blocks
-                    resume_from = len(blocks) + 1
-                    print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
+                # Check whether the interrupted run was for the same PDF version
+                m = re.search(r"<!-- mdnotes: in progress: (\S+?) -->", existing)
+                same_version = m and m.group(1) == file_meta["modifiedTime"]
+                if same_version:
+                    # Parse out completed page blocks — each starts with <!-- page N/total -->
+                    blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
+                                        existing, re.DOTALL)
+                    if blocks:
+                        pages_done = blocks
+                        resume_from = len(blocks) + 1
+                        print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
+                else:
+                    print(f"{indent}  PDF changed since last interrupted run — starting fresh")
 
         for page_num in range(1, total + 1):
             if page_num < resume_from:
                 print(f"{indent}    Page {page_num}/{total} — already written")
                 continue
 
-            key = pdf_page_hash(pdf_path, page_num)
+            key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}"
             cached = cache.get(key)
             if cached is not None:
                 print(f"{indent}    Page {page_num}/{total} — cached")
@@ -145,8 +160,10 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
             if not only_download:
                 pages_done.append(f"<!-- page {page_num}/{total} -->\n{page_md}")
                 # Rewrite file after each page with marker at end — marker absence = complete
+                # Embed Drive modifiedTime so resume can detect if the PDF changed
                 md_path.write_text(
-                    "\n\n---\n\n".join(pages_done) + "\n\n<!-- mdnotes: in progress -->"
+                    "\n\n---\n\n".join(pages_done)
+                    + f"\n\n<!-- mdnotes: in progress: {file_meta['modifiedTime']} -->"
                 )
 
         pdf_path.unlink(missing_ok=True)  # clean up downloaded PDF
@@ -159,8 +176,9 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 print(f"{indent}  All pages cached — nothing to transcribe")
                 result.skipped.append(name)
         else:
-            # Write final file without the in-progress marker
-            md_path.write_text("\n\n---\n\n".join(pages_done))
+            # Write final file: synced header followed by page blocks, no in-progress marker
+            header = f"<!-- mdnotes: synced: {file_meta['modifiedTime']} -->"
+            md_path.write_text(header + "\n\n" + "\n\n---\n\n".join(pages_done))
             result.processed.append(name)
             print(f"{indent}  Done → {md_path}")
     except Exception as exc:
