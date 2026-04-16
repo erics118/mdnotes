@@ -111,15 +111,39 @@ def prefs():
                 click.echo(f"  {i}. {name}  →  {label}")
 
         click.echo("")
-        click.echo("  [number] clear a folder preference")
-        click.echo("  [a]      reset all")
-        click.echo("  [q]      quit")
+        click.echo("  [number]        clear a folder preference")
+        click.echo("  [f]             edit folder-name")
+        click.echo("  [o]             edit output-dir")
+        click.echo("  [d]             edit dpi")
+        click.echo("  [a]             reset all")
+        click.echo("  [q]             quit")
         click.echo("")
 
         raw = input("Choice: ").strip().lower()
 
         if raw == "q" or raw == "":
             break
+        elif raw == "f":
+            current = p.get_setting("folder_name") or ""
+            val = input(f"folder-name [{current}]: ").strip()
+            if val:
+                p.set_setting("folder_name", val)
+                click.echo(f"  folder-name set to '{val}'.")
+        elif raw == "o":
+            current = p.get_setting("output_dir") or ""
+            val = input(f"output-dir [{current}]: ").strip()
+            if val:
+                p.set_setting("output_dir", val)
+                click.echo(f"  output-dir set to '{val}'.")
+        elif raw == "d":
+            current = p.get_setting("dpi") or ""
+            val = input(f"dpi [{current}]: ").strip()
+            if val:
+                if not val.isdigit():
+                    click.echo("  DPI must be a number.")
+                else:
+                    p.set_setting("dpi", val)
+                    click.echo(f"  dpi set to {val}.")
         elif raw == "a":
             if input("Reset all preferences? [y/N] ").strip().lower() == "y":
                 p.reset()
