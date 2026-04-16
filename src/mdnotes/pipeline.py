@@ -1,4 +1,7 @@
 # src/mdnotes/pipeline.py
+import re
+import tempfile
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,7 +10,6 @@ import anthropic
 from mdnotes.cache import TranscriptionCache
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
-import tempfile
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
 from mdnotes.transcribe import transcribe_page
 
@@ -39,7 +41,6 @@ def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
     if "<!-- mdnotes: in progress" in text:
         return False
     # Prefer comparing recorded Drive mtime embedded in the file header
-    import re
     m = re.search(r"<!-- mdnotes: synced: ([^-].*?) -->", text)
     if m:
         recorded = _drive_mtime(m.group(1))
@@ -104,86 +105,98 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
         result.skipped.append(name)
         return
 
-    # In only_download mode, download to a temp dir so we don't create real output dirs
-    download_dir = Path(tempfile.mkdtemp()) if only_download else output_dir
+    # For only_download: skip if we've already checked this exact PDF version
+    check_key = f"__dl_check__:{file_meta['id']}:{file_meta['modifiedTime']}" if only_download else None
+    if check_key and cache.get(check_key) is not None:
+        print(f"{indent}  '{name}' — already checked, skipping")
+        result.skipped.append(name)
+        return
 
-    try:
-        print(f"{indent}  Downloading '{name}'...")
-        pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=name, output_dir=download_dir)
+    # In only_download mode, use a temp dir that auto-cleans on exit (even on exception)
+    with (tempfile.TemporaryDirectory() if only_download else nullcontext()) as _tmp:
+        download_dir = Path(_tmp) if only_download else output_dir
 
-        total = pdf_page_count(pdf_path)
-        print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
+        try:
+            print(f"{indent}  Downloading '{name}'...")
+            pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=name, output_dir=download_dir)
 
-        uncached = 0
+            total = pdf_page_count(pdf_path)
+            print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
 
-        # Recover already-written pages from an interrupted previous run
-        pages_done = []
-        resume_from = 1
-        if not only_download and md_path.exists():
-            existing = md_path.read_text()
-            if "<!-- mdnotes: in progress" in existing:
-                import re
-                # Check whether the interrupted run was for the same PDF version
-                m = re.search(r"<!-- mdnotes: in progress: (\S+?) -->", existing)
-                same_version = m and m.group(1) == file_meta["modifiedTime"]
-                if same_version:
-                    # Parse out completed page blocks — each starts with <!-- page N/total -->
-                    blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
-                                        existing, re.DOTALL)
-                    if blocks:
-                        pages_done = blocks
-                        resume_from = len(blocks) + 1
-                        print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
-                else:
-                    print(f"{indent}  PDF changed since last interrupted run — starting fresh")
+            uncached = 0
 
-        for page_num in range(1, total + 1):
-            if page_num < resume_from:
-                print(f"{indent}    Page {page_num}/{total} — already written")
-                continue
+            # Recover already-written pages from an interrupted previous run
+            pages_done = []
+            resume_from = 1
+            if not only_download and md_path.exists():
+                existing = md_path.read_text()
+                if "<!-- mdnotes: in progress" in existing:
+                    # Check whether the interrupted run was for the same PDF version
+                    m = re.search(r"<!-- mdnotes: in progress: (\S+?) -->", existing)
+                    same_version = m and m.group(1) == file_meta["modifiedTime"]
+                    if same_version:
+                        # Parse out completed page blocks — each starts with <!-- page N/total -->
+                        blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
+                                            existing, re.DOTALL)
+                        if blocks:
+                            pages_done = blocks
+                            resume_from = len(blocks) + 1
+                            print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
+                    else:
+                        print(f"{indent}  PDF changed since last interrupted run — starting fresh")
 
-            key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}"
-            cached = cache.get(key)
-            if cached is not None:
-                print(f"{indent}    Page {page_num}/{total} — cached")
-                page_md = cached
-            else:
-                uncached += 1
-                if only_download:
-                    print(f"{indent}    Page {page_num}/{total} — would transcribe")
+            for page_num in range(1, total + 1):
+                if page_num < resume_from:
+                    print(f"{indent}    Page {page_num}/{total} — already written")
                     continue
+
+                key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}"
+                cached = cache.get(key)
+                if cached is not None:
+                    print(f"{indent}    Page {page_num}/{total} — cached")
+                    page_md = cached
                 else:
-                    print(f"{indent}    Page {page_num}/{total} — transcribing...")
-                    img = rasterize_page(pdf_path, page_num, dpi=dpi)
-                    page_md = transcribe_page(img, cache=cache, client=client, cache_key=key)
+                    uncached += 1
+                    if only_download:
+                        print(f"{indent}    Page {page_num}/{total} — would transcribe")
+                        continue
+                    else:
+                        print(f"{indent}    Page {page_num}/{total} — transcribing...")
+                        img = rasterize_page(pdf_path, page_num, dpi=dpi)
+                        page_md = transcribe_page(img, cache=cache, client=client, cache_key=key)
 
+                if not only_download:
+                    pages_done.append(f"<!-- page {page_num}/{total} -->\n{page_md}")
+                    # Rewrite file after each page with marker at end — marker absence = complete
+                    # Embed Drive modifiedTime so resume can detect if the PDF changed
+                    md_path.write_text(
+                        "\n\n---\n\n".join(pages_done)
+                        + f"\n\n<!-- mdnotes: in progress: {file_meta['modifiedTime']} -->"
+                    )
+
+            # pdf_path lives in _tmp for only_download (cleaned up by context manager);
+            # for normal sync, unlink it explicitly
             if not only_download:
-                pages_done.append(f"<!-- page {page_num}/{total} -->\n{page_md}")
-                # Rewrite file after each page with marker at end — marker absence = complete
-                # Embed Drive modifiedTime so resume can detect if the PDF changed
-                md_path.write_text(
-                    "\n\n---\n\n".join(pages_done)
-                    + f"\n\n<!-- mdnotes: in progress: {file_meta['modifiedTime']} -->"
-                )
+                pdf_path.unlink(missing_ok=True)
 
-        pdf_path.unlink(missing_ok=True)  # clean up downloaded PDF
-
-        if only_download:
-            if uncached:
-                print(f"{indent}  {uncached} page{'s' if uncached != 1 else ''} would be transcribed")
-                result.processed.append(name)
+            if only_download:
+                if uncached:
+                    print(f"{indent}  {uncached} page{'s' if uncached != 1 else ''} would be transcribed")
+                    result.processed.append(name)
+                else:
+                    print(f"{indent}  All pages cached — nothing to transcribe")
+                    result.skipped.append(name)
+                # Record check so future only_download runs skip re-downloading this version
+                cache.set(check_key, "1")
             else:
-                print(f"{indent}  All pages cached — nothing to transcribe")
-                result.skipped.append(name)
-        else:
-            # Write final file: synced header followed by page blocks, no in-progress marker
-            header = f"<!-- mdnotes: synced: {file_meta['modifiedTime']} -->"
-            md_path.write_text(header + "\n\n" + "\n\n---\n\n".join(pages_done))
-            result.processed.append(name)
-            print(f"{indent}  Done → {md_path}")
-    except Exception as exc:
-        print(f"{indent}  Error: {exc}")
-        result.errors.append(f"{name}: {exc}")
+                # Write final file: synced header followed by page blocks, no in-progress marker
+                header = f"<!-- mdnotes: synced: {file_meta['modifiedTime']} -->"
+                md_path.write_text(header + "\n\n" + "\n\n---\n\n".join(pages_done))
+                result.processed.append(name)
+                print(f"{indent}  Done → {md_path}")
+        except Exception as exc:
+            print(f"{indent}  Error: {exc}")
+            result.errors.append(f"{name}: {exc}")
 
 
 def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
@@ -210,7 +223,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         return
 
     folder_output = output_dir / folder_name
-    if not dry_run and not only_download:
+    if not dry_run:
         folder_output.mkdir(parents=True, exist_ok=True)
 
     # Recurse into subfolders
