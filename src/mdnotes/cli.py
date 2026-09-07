@@ -4,6 +4,8 @@ import click
 from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
 from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
+from mdnotes.index import NoteIndex, DEFAULT_INDEX, HANDWRITTEN, parse_note_pages
+from mdnotes.search import search as run_search
 
 DEFAULT_DPI = 200
 
@@ -80,6 +82,54 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
         click.echo("Errors:", err=True)
         for e in result.errors:
             click.echo(f"  {e}", err=True)
+
+
+@main.command(name="index")
+@click.option("--output-dir", default=None,
+              help="Directory of .md notes to index. Defaults to saved output-dir or ~/notes.")
+@click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
+              help="Path to the SQLite search index.")
+@click.option("--rebuild", is_flag=True, default=False,
+              help="Backfill the index from all existing .md files.")
+def index_cmd(output_dir, index_path, rebuild):
+    """Build or refresh the search index from transcribed .md notes."""
+    p = SyncPrefs()
+    if output_dir is None:
+        output_dir = p.get_setting("output_dir") or str(Path.home() / "notes")
+    out = Path(output_dir)
+    idx = NoteIndex(Path(index_path))
+
+    count = 0
+    for md in sorted(out.rglob("*.md")):
+        text = md.read_text()
+        if "<!-- mdnotes: in progress" in text:
+            continue
+        pages = parse_note_pages(text)
+        if not pages:
+            continue
+        note_id = md.relative_to(out).as_posix()
+        idx.upsert_note(note_id, title=md.stem, pages=pages,
+                        path=str(md), source_type=HANDWRITTEN)
+        count += 1
+        click.echo(f"indexed {note_id} ({len(pages)} pages)")
+    click.echo(f"\nindexed {count} notes -> {index_path}")
+
+
+@main.command(name="search")
+@click.argument("query")
+@click.option("-k", "top_k", default=10, show_default=True, help="Number of results.")
+@click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
+              help="Path to the SQLite search index.")
+def search_cmd(query, top_k, index_path):
+    """Search transcribed notes (hybrid semantic + full-text)."""
+    idx = NoteIndex(Path(index_path))
+    hits = run_search(idx, query, k=top_k)
+    if not hits:
+        click.echo("No results.")
+        return
+    for h in hits:
+        click.echo(f"[{h.score:.3f}] {h.title} (p{h.page_num}) [{h.source_type}]")
+        click.echo(f"    {h.snippet}\n")
 
 
 @main.command()

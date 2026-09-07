@@ -12,6 +12,8 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "click>=8.1",
     "pypdf>=4",
+    "voyageai>=0.3",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.scripts]
