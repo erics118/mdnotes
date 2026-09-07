@@ -5,7 +5,7 @@ from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
 from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
 
-DEFAULT_DPI = 150
+DEFAULT_DPI = 200
 
 
 @click.group()

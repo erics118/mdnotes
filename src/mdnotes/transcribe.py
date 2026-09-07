@@ -3,10 +3,14 @@ import anthropic
 from mdnotes.cache import TranscriptionCache, page_hash
 
 MODEL = "claude-haiku-4-5"
+# bump whenever MODEL or PROMPT changes so cached transcriptions invalidate
+TRANSCRIBE_VERSION = 2
 PROMPT = (
     "Transcribe all handwritten content from this note page into clean Markdown. "
-    "Preserve headings, bullet points, numbered lists, and diagrams described as text. "
-    "For equations, use LaTeX fenced in $...$. "
+    "Preserve headings, bullet points, and numbered lists in their original structure. "
+    "Render math in LaTeX: inline math as $...$, standalone/displayed equations as $$...$$. "
+    "Render tabular content as GitHub-flavored Markdown tables. "
+    "Describe diagrams in a short bracketed note, e.g. [diagram: labeled triangle]. "
     "If a section is illegible, write [illegible]. "
     "Output only the Markdown, no preamble."
 )
@@ -35,7 +39,7 @@ def transcribe_page(
     encoded = base64.standard_b64encode(image_bytes).decode()
     response = client.messages.create(
         model=MODEL,
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{
             "role": "user",
             "content": [

@@ -98,7 +98,7 @@ The Drive `modifiedTime` is embedded in both markers so resume logic can detect 
 
 ## Cache Key Format
 
-- **Transcription:** `{sha256_of_pdf_page_content_stream}:dpi={dpi}` — stable across re-downloads; DPI is part of the key so changing DPI invalidates cached transcriptions
+- **Transcription:** `{sha256_of_pdf_page_content_stream}:dpi={dpi}:v={TRANSCRIBE_VERSION}` — stable across re-downloads; DPI and `TRANSCRIBE_VERSION` (in `transcribe.py`) are part of the key, so changing DPI, the prompt, or the model invalidates cached transcriptions. Bump `TRANSCRIBE_VERSION` whenever `PROMPT` or `MODEL` changes.
 - **Download check** (only_download mode): `__dl_check__:{file_id}:{drive_mtime}` — records that a PDF version was checked; prevents re-downloading on repeated `--only-download` runs
 
 ## Model

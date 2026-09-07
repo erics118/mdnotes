@@ -35,7 +35,7 @@ def pdf_page_hash(pdf_path: Path, page_num: int) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def rasterize_page(pdf_path: Path, page_num: int, dpi: int = 150) -> bytes:
+def rasterize_page(pdf_path: Path, page_num: int, dpi: int = 200) -> bytes:
     """
     Rasterize a single page (1-indexed) to JPEG bytes.
     Uses pdftoppm -f/-l flags to render only that page.

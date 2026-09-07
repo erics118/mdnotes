@@ -11,7 +11,7 @@ from mdnotes.cache import TranscriptionCache
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
-from mdnotes.transcribe import transcribe_page
+from mdnotes.transcribe import transcribe_page, TRANSCRIBE_VERSION
 
 DEFAULT_CACHE = Path.home() / ".cache" / "mdnotes" / "transcriptions.json"
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -153,7 +153,7 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                     print(f"{indent}    Page {page_num}/{total} — already written")
                     continue
 
-                key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}"
+                key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}:v={TRANSCRIBE_VERSION}"
                 cached = cache.get(key)
                 if cached is not None:
                     print(f"{indent}    Page {page_num}/{total} — cached")
