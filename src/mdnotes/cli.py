@@ -228,10 +228,10 @@ def serve(host, port, index_path):
             f"refusing to serve on {host} without MDNOTES_PASSWORD set "
             "(that would expose your notes and controls to the network)."
         )
-    dist = Path(__file__).parent.parent.parent / "web" / "dist"
+    dist = Path(__file__).parent / "web_dist"
     if not dist.exists():
         click.echo(click.style(
-            "warning: web/dist not found; the UI will 404. build it with "
+            "warning: SPA not built; the UI will 404. build it with "
             "`npm --prefix web install && npm --prefix web run build`.", fg="yellow"))
     os.environ["MDNOTES_INDEX"] = index_path
     click.echo(f"serving on http://{host}:{port}")

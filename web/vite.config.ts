@@ -9,5 +9,6 @@ export default defineConfig({
       "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  // build into the package so `pip install` ships the SPA and the server finds it
+  build: { outDir: "../src/mdnotes/web_dist", emptyOutDir: true },
 });

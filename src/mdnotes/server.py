@@ -297,7 +297,8 @@ def api_pdf(note_id: str, _=Depends(require_auth)):
     raise HTTPException(status_code=404, detail="pdf not available")
 
 
-_dist = Path(__file__).parent.parent.parent / "web" / "dist"
+# built SPA ships inside the package (vite outputs here); works for source and wheel installs
+_dist = Path(__file__).parent / "web_dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
 

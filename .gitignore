@@ -5,6 +5,7 @@ __pycache__/
 .env
 .envrc
 dist/
+src/mdnotes/web_dist/
 *.egg-info/
 /tmp/
 venv/

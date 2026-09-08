@@ -28,7 +28,7 @@ brew install poppler   # macOS
 ```bash
 pip install -e ".[dev]"        # backend + dev deps (pytest)
 npm --prefix web install       # frontend deps (nodejs_22 via flake)
-npm --prefix web run build     # produce web/dist (served by FastAPI)
+npm --prefix web run build     # produce src/mdnotes/web_dist (served by FastAPI, bundled into the wheel)
 ```
 
 Environment variables go in `.envrc` (gitignored via direnv). API keys are read via `config.py`, which prefers the `MDNOTES_`-prefixed names and falls back to the unprefixed ones:
@@ -48,7 +48,7 @@ Primary (GUI):
 ```bash
 mdnotes serve                  # FastAPI + React SPA on http://127.0.0.1:8000
 ```
-Then in the browser: Setup connects Drive, browses to and selects the GoodNotes folder, and marks folders to Sync/Ignore; run Sync with live progress; Search reads results as PDFs. Set `MDNOTES_PASSWORD` to require a single password. The SPA is served from `web/dist`, so build the frontend first.
+Then in the browser: Setup connects Drive, browses to and selects the GoodNotes folder, and marks folders to Sync/Ignore; run Sync with live progress; Search reads results as PDFs. Set `MDNOTES_PASSWORD` to require a single password. The SPA is served from `src/mdnotes/web_dist`, so build the frontend first.
 
 CLI (scripted/headless, still supported):
 ```bash
@@ -75,9 +75,9 @@ mdnotes prefs   # inspect remembered folder sync preferences
 | `embed.py` | Voyage embeddings + rerank wrappers (`voyage-4-lite`, `rerank-3-lite`); optional `VOYAGE_MIN_INTERVAL` throttle |
 | `index.py` | `NoteIndex`: derived SQLite search index (FTS5 BM25 + sqlite-vec KNN), embedding cache |
 | `search.py` | Hybrid retrieval: vector + FTS candidates, RRF fusion, Voyage rerank |
-| `server.py` | FastAPI backend: status, auth, Drive browse, folder prefs, sync (start/stop/progress), search/notes/note/pdf; serves the React SPA from `web/dist`; single-password auth |
+| `server.py` | FastAPI backend: status, auth, Drive browse, folder prefs, sync (start/stop/progress), search/notes/note/pdf; serves the React SPA from `src/mdnotes/web_dist`; single-password auth |
 | `textbook.py` | Ingest printed PDFs via `pdftotext` (no VLM) into the unified index |
-| `web/` | React + Vite + TypeScript SPA (TanStack Query, React Router, Tailwind). Pages: Search, Folders, Setup, Reader. Built to `web/dist`, served by `server.py`. |
+| `web/` | React + Vite + TypeScript SPA (TanStack Query, React Router, Tailwind). Pages: Search, Folders, Setup, Reader. Built to `src/mdnotes/web_dist` (inside the package, so `pip install` ships it), served by `server.py`. |
 
 ## Output File Format Contracts
 
