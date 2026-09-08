@@ -78,6 +78,7 @@ export default function Setup() {
         <div className="mt-2">
           <Button variant="ghost" onClick={() => outDir && saveSettings.mutate({ output_dir: outDir })}>Save</Button>
         </div>
+        {saveSettings.isError && <div className="mt-2 text-[13px] text-danger">Could not save: {String(saveSettings.error)}</div>}
       </Card>
 
       {/* Sync */}
@@ -101,6 +102,8 @@ export default function Setup() {
           <Link to="/folders"><Button variant="ghost">Configure folders</Button></Link>
         </div>
         <SyncStatus />
+        {startSync.isError && <div className="mt-2 text-[13px] text-danger">Could not start sync: {String(startSync.error)}</div>}
+        {stopSync.isError && <div className="mt-2 text-[13px] text-danger">Could not stop sync: {String(stopSync.error)}</div>}
         {!s.folder_configured && <div className="mt-2 text-[13px] text-danger">Choose a notes folder first.</div>}
       </Card>
     </Wrap>

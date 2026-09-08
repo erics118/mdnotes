@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import katex from "katex";
 
 // render markdown + KaTeX for the transcribed-text fallback view
@@ -7,7 +8,9 @@ export function Markdown({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current) return;
-    ref.current.innerHTML = marked.parse(text, { async: false }) as string;
+    // transcribed note text is untrusted; sanitize before it reaches the DOM
+    const html = marked.parse(text, { async: false }) as string;
+    ref.current.innerHTML = DOMPurify.sanitize(html);
     renderMath(ref.current);
   }, [text]);
   return <div className="md" ref={ref} />;

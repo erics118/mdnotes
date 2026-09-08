@@ -25,6 +25,7 @@ mdnotes = "mdnotes.cli:main"
 dev = [
     "pytest>=8",
     "pytest-mock>=3.12",
+    "httpx>=0.27",
 ]
 
 [tool.setuptools.packages.find]

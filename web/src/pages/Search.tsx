@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCourses, useNotes, useSearch } from "../lib/queries";
-import type { NoteMeta } from "../lib/api";
+import { encId, type NoteMeta } from "../lib/api";
 import { Badge, Card, Empty, Spinner } from "../components/ui";
 import { useDebounced } from "../lib/useDebounced";
 
@@ -19,9 +19,8 @@ export default function Search() {
   const search = useSearch(debounced, course);
 
   const open = (noteId: string, page: number) => {
-    const id = encodeURIComponent(noteId).replace(/%2F/g, "/");
     const qp = debounced.trim() ? `&q=${encodeURIComponent(debounced.trim())}` : "";
-    nav(`/note/${id}?page=${page}${qp}`);
+    nav(`/note/${encId(noteId)}?page=${page}${qp}`);
   };
 
   return (
@@ -42,16 +41,18 @@ export default function Search() {
       </div>
 
       <div className="mt-4">
-        {query.trim() ? (
-          search.isFetching ? (
+        {debounced.trim() ? (
+          search.isError ? (
+            <Empty>Search failed: {String(search.error)}</Empty>
+          ) : search.isPending || search.isFetching ? (
             <div className="py-2 text-sm text-muted"><Spinner /> Searching...</div>
           ) : !search.data?.results.length ? (
             <Empty>No matches.</Empty>
           ) : (
             <>
               <div className="py-1.5 text-[13px] text-muted">{search.data.results.length} results</div>
-              {search.data.results.map((h, i) => (
-                <Card key={i} onClick={() => open(h.note_id, h.page_num)} className="mb-2.5 cursor-pointer hover:border-accent">
+              {search.data.results.map((h) => (
+                <Card key={`${h.note_id}:${h.page_num}`} onClick={() => open(h.note_id, h.page_num)} className="mb-2.5 cursor-pointer hover:border-accent">
                   <div className="mb-1 text-xs text-muted">{crumb(h.note_id)}</div>
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{h.title}</span>
@@ -63,6 +64,8 @@ export default function Search() {
               ))}
             </>
           )
+        ) : notes.isError ? (
+          <Empty>Could not load notes: {String(notes.error)}</Empty>
         ) : (
           <BrowseTree notes={notes.data?.notes ?? []} course={course} onOpen={open} loading={notes.isLoading} />
         )}
@@ -126,7 +129,7 @@ function Nodes({ node, onOpen, depth }: { node: TreeNode; onOpen: (id: string, p
           </div>
         </details>
       ))}
-      {node.files.sort((a, b) => a.name.localeCompare(b.name)).map((f) => (
+      {[...node.files].sort((a, b) => a.name.localeCompare(b.name)).map((f) => (
         <div
           key={f.note_id}
           onClick={() => onOpen(f.note_id, 1)}

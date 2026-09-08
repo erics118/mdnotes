@@ -39,6 +39,9 @@ export default function Folders() {
       <div className="py-1.5 text-[13px] text-muted">
         Choose what to sync. Ignored folders (and their contents) are skipped. Default follows the parent (ignored at the top).
       </div>
+      {setPref.isError && (
+        <div className="mb-2 text-[13px] text-danger">Could not save that change: {String(setPref.error)}</div>
+      )}
       <Card>
         {Object.keys(tree.children).sort().map((name) => (
           <FolderNode key={name} node={tree.children[name]} depth={0} onSet={set} />

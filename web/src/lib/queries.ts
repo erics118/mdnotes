@@ -45,6 +45,7 @@ export function useDriveChildren(parent: string) {
   return useQuery({
     queryKey: ["children", parent],
     queryFn: () => api.get<{ folders: DriveFolder[] }>("/api/drive/children?parent=" + encodeURIComponent(parent)),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

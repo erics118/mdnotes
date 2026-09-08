@@ -6,6 +6,10 @@ from mdnotes.config import anthropic_key
 MODEL = "claude-haiku-4-5"
 # bump whenever MODEL or PROMPT changes so cached transcriptions invalidate
 TRANSCRIBE_VERSION = 2
+
+
+class TranscribeError(Exception):
+    pass
 PROMPT = (
     "Transcribe all handwritten content from this note page into clean Markdown. "
     "Preserve headings, bullet points, and numbered lists in their original structure. "
@@ -52,6 +56,12 @@ def transcribe_page(
             ],
         }],
     )
-    markdown = response.content[0].text
+    if response.stop_reason == "max_tokens":
+        # truncated: caching it would permanently freeze a half-transcribed page
+        raise TranscribeError(f"transcription hit max_tokens for page (cache_key={h})")
+    text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
+    markdown = "".join(text_blocks).strip()
+    if not markdown:
+        raise TranscribeError(f"empty transcription response (cache_key={h})")
     cache.set(h, markdown)
     return markdown

@@ -10,6 +10,7 @@ import anthropic
 from mdnotes.cache import TranscriptionCache
 from mdnotes.config import anthropic_key
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
+from mdnotes.fsutil import atomic_write_text, safe_component
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
 from mdnotes.notefmt import HANDWRITTEN, build_note, page_block, parse_frontmatter, parse_pages
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
@@ -115,7 +116,7 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
     only_download: download and check per-page cache but skip transcription and writing.
     """
     name = file_meta["name"]
-    stem = Path(name).stem
+    stem = safe_component(Path(name).stem)
     md_path = output_dir / f"{stem}.md"
 
     if _is_up_to_date(file_meta, md_path):
@@ -136,7 +137,9 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
 
         try:
             print(f"{indent}  Downloading '{name}'...")
-            pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=name, output_dir=download_dir)
+            # save the PDF as the .md sibling so the reader can find it; a temp name is fine for only_download
+            dl_name = name if only_download else f"{stem}.pdf"
+            pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=dl_name, output_dir=download_dir)
 
             total = pdf_page_count(pdf_path)
             print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
@@ -225,7 +228,8 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                      "synced": synced},
                     pages_done,
                 )
-                md_path.write_text(final_text)
+                # atomic so an interrupt can't leave a truncated file that reads as complete
+                atomic_write_text(md_path, final_text)
                 result.processed.append(name)
                 print(f"{indent}  Done → {md_path}")
                 if progress:
@@ -242,6 +246,9 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                     except Exception as ie:
                         print(f"{indent}  Index error: {ie}")
                         result.errors.append(f"{name} (index): {ie}")
+        except anthropic.AuthenticationError:
+            # a bad API key is fatal for the whole run; don't grind through every file
+            raise
         except Exception as exc:
             print(f"{indent}  Error: {exc}")
             result.errors.append(f"{name}: {exc}")
@@ -289,7 +296,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         result.skipped.append(folder_name)
         return
 
-    folder_output = output_dir / folder_name
+    folder_output = output_dir / safe_component(folder_name)
     if not dry_run:
         folder_output.mkdir(parents=True, exist_ok=True)
 
@@ -314,10 +321,10 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         if should_stop and should_stop():
             return
         name = pdf["name"]
-        stem = Path(name).stem
+        stem = safe_component(Path(name).stem)
         md_path = folder_output / f"{stem}.md"
 
-        if mode == "select":
+        if mode == SELECT:
             if _is_up_to_date(pdf, md_path):
                 print(f"{indent}  '{name}' — up-to-date, skipping")
                 result.skipped.append(name)
@@ -359,7 +366,8 @@ def run_pipeline(
     root_id: str | None = None,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        output_dir.mkdir(parents=True, exist_ok=True)
     exclude = set(exclude or [])
 
     cache = TranscriptionCache(cache_path)

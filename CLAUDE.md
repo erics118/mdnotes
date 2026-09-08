@@ -39,7 +39,7 @@ source venv/bin/activate
 ```
 
 Google OAuth credentials go in `credentials/` (gitignored):
-- `credentials/credentials.json` — OAuth client secret from Google Cloud Console
+- `credentials/client_secret.json` — OAuth client secret from Google Cloud Console
 - `credentials/token.json` — auto-generated on first auth (via the Setup wizard or CLI)
 
 ## Running
@@ -62,6 +62,7 @@ mdnotes prefs   # inspect remembered folder sync preferences
 | File | Responsibility |
 |------|---------------|
 | `config.py` | Reads `MDNOTES_`-prefixed API keys (fallback to unprefixed); `DEFAULT_NOTES` (`~/.local/share/mdnotes/notes`) |
+| `fsutil.py` | `atomic_write_text` (temp + fsync + os.replace), `read_json` (corrupt-safe load), `safe_component` (confine Drive names to one path component) |
 | `cli.py` | Click CLI — `sync`, `index`, `search`, `ingest-pdf`, `serve`, `prefs` |
 | `pipeline.py` | Orchestration: Drive walk, staleness checks, download, resume, transcription loop; `progress`/`should_stop`/`root_id` for the GUI |
 | `drive.py` | Google Drive API: `list_folder_children` (browse any depth), `walk_folders`, `find_goodnotes_folder_id`, list items, download PDF |

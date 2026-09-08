@@ -1,13 +1,31 @@
 # src/mdnotes/drive.py
-import io
+import os
 from pathlib import Path
 from googleapiclient.http import MediaIoBaseDownload
+
+
+def _escape_q(value: str) -> str:
+    """Escape a string literal for a Drive query (backslash and single-quote)."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _list_all(service, **kwargs) -> list[dict]:
+    """files().list with full pagination (Drive returns <=100 per page by default)."""
+    items: list[dict] = []
+    page_token = None
+    while True:
+        resp = service.files().list(pageSize=1000, pageToken=page_token, **kwargs).execute()
+        items.extend(resp.get("files", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return items
 
 
 def find_goodnotes_folder_id(service, folder_name: str = "GoodNotes 5") -> str:
     """Return the Drive folder ID for the GoodNotes sync folder."""
     result = service.files().list(
-        q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}' and trashed=false",
+        q=f"mimeType='application/vnd.google-apps.folder' and name='{_escape_q(folder_name)}' and trashed=false",
         fields="files(id, name)",
     ).execute()
     files = result.get("files", [])
@@ -18,12 +36,12 @@ def find_goodnotes_folder_id(service, folder_name: str = "GoodNotes 5") -> str:
 
 def list_items(service, folder_id: str) -> tuple[list[dict], list[dict]]:
     """Return (subfolders, pdfs) inside folder_id, both sorted by name."""
-    result = service.files().list(
+    items = _list_all(
+        service,
         q=f"'{folder_id}' in parents and trashed=false and ("
           f"mimeType='application/vnd.google-apps.folder' or mimeType='application/pdf')",
-        fields="files(id, name, mimeType, modifiedTime)",
-    ).execute()
-    items = result.get("files", [])
+        fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
+    )
     folders = sorted(
         [f for f in items if f["mimeType"] == "application/vnd.google-apps.folder"],
         key=lambda f: f["name"],
@@ -37,11 +55,12 @@ def list_items(service, folder_id: str) -> tuple[list[dict], list[dict]]:
 
 def list_folder_children(service, parent_id: str = "root") -> list[dict]:
     """Subfolders of parent_id ('root' for My Drive top level). For the setup folder browser."""
-    result = service.files().list(
+    items = _list_all(
+        service,
         q=f"mimeType='application/vnd.google-apps.folder' and '{parent_id}' in parents and trashed=false",
-        fields="files(id, name)",
-    ).execute()
-    return sorted(result.get("files", []), key=lambda f: f["name"].lower())
+        fields="nextPageToken, files(id, name)",
+    )
+    return sorted(items, key=lambda f: f["name"].lower())
 
 
 def walk_folders(service, root_id: str) -> list[dict]:
@@ -83,12 +102,26 @@ def walk_folders(service, root_id: str) -> list[dict]:
 
 
 def download_pdf(service, file_id: str, file_name: str, output_dir: Path) -> Path:
-    """Download a Drive file by ID to output_dir. Returns the local path."""
+    """Download a Drive file by ID to output_dir. Returns the local path.
+
+    Writes to a .part file first, then os.replace, so a dropped download never
+    overwrites a good PDF with a truncated one.
+    """
     dest = output_dir / file_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
     request = service.files().get_media(fileId=file_id)
-    with open(dest, "wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
+    try:
+        with open(part, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+        os.replace(part, dest)
+    except BaseException:
+        try:
+            os.unlink(part)
+        except OSError:
+            pass
+        raise
     return dest

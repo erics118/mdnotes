@@ -11,20 +11,31 @@ function authHeader(): Record<string, string> {
 export function authHeaders(): Record<string, string> {
   return authHeader();
 }
-export function pwParam(): string {
-  const p = pw();
-  return p ? "&pw=" + encodeURIComponent(p) : "";
-}
 export function encId(id: string): string {
   return encodeURIComponent(id).replace(/%2F/g, "/");
+}
+
+// one shared prompt so parallel 401s (cold load fires several) don't stack dialogs
+let pwPrompt: Promise<string | null> | null = null;
+function promptOnce(): Promise<string | null> {
+  // another request may already have stored the password by the time we get here
+  if (pw()) return Promise.resolve(pw());
+  if (!pwPrompt) {
+    pwPrompt = Promise.resolve().then(() => {
+      const p = window.prompt("Password:");
+      if (p !== null) { try { sessionStorage.setItem("mdnotes_pw", p); } catch { /* ignore */ } }
+      pwPrompt = null;
+      return p;
+    });
+  }
+  return pwPrompt;
 }
 
 async function req(path: string, opts: RequestInit = {}): Promise<Response> {
   let r = await fetch(path, { ...opts, headers: { ...authHeader(), ...(opts.headers || {}) } });
   if (r.status === 401) {
-    const p = window.prompt("Password:");
+    const p = await promptOnce();
     if (p === null) throw new Error("auth cancelled");
-    try { sessionStorage.setItem("mdnotes_pw", p); } catch { /* ignore */ }
     r = await fetch(path, { ...opts, headers: { ...authHeader(), ...(opts.headers || {}) } });
   }
   return r;

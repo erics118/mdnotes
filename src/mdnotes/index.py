@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite_vec
 
 from mdnotes.embed import EMBED_DIM, EMBED_MODEL, embed_documents
-from mdnotes.notefmt import HANDWRITTEN, TEXTBOOK
+from mdnotes.notefmt import HANDWRITTEN
 
 DEFAULT_INDEX = Path.home() / ".cache" / "mdnotes" / "index.db"
 
@@ -86,60 +86,75 @@ class NoteIndex:
         db = self.db
         now = datetime.now(timezone.utc).isoformat()
 
-        for (pid,) in db.execute("select page_id from pages where note_id=?", (note_id,)).fetchall():
-            db.execute("delete from pages_fts where rowid=?", (pid,))
-            db.execute("delete from vec_pages where page_id=?", (pid,))
-        db.execute("delete from pages where note_id=?", (note_id,))
-
-        db.execute(
-            "insert into notes(note_id,title,path,source_type,drive_mtime,synced_at) "
-            "values(?,?,?,?,?,?) on conflict(note_id) do update set "
-            "title=excluded.title, path=excluded.path, source_type=excluded.source_type, "
-            "drive_mtime=excluded.drive_mtime, synced_at=excluded.synced_at",
-            (note_id, title, path, source_type, drive_mtime, now),
-        )
-
-        pending_text: list[str] = []
-        pending_meta: list[tuple[int, str]] = []
+        # Embed any missing pages BEFORE touching the DB, so a Voyage failure can't
+        # leave a half-deleted note behind. Cache lookup is keyed by (hash, model, dim)
+        # so a model/dim change re-embeds instead of reusing an incompatible vector.
+        blobs: dict[str, bytes] = {}
+        missing_text: list[str] = []
+        missing_hash: list[str] = []
         for p in pages:
             ch = content_hash(p["markdown"])
-            cur = db.execute(
-                "insert into pages(note_id,page_num,total,content_hash,markdown) values(?,?,?,?,?)",
-                (note_id, p["page_num"], p.get("total"), ch, p["markdown"]),
-            )
-            pid = cur.lastrowid
-            db.execute(
-                "insert into pages_fts(rowid, markdown, title) values(?,?,?)",
-                (pid, p["markdown"], title),
-            )
-            row = db.execute("select vector from embeddings where content_hash=?", (ch,)).fetchone()
-            if row is None:
-                pending_text.append(p["markdown"])
-                pending_meta.append((pid, ch))
+            if ch in blobs:
+                continue
+            row = db.execute(
+                "select vector from embeddings where content_hash=? and model=? and dim=?",
+                (ch, EMBED_MODEL, EMBED_DIM),
+            ).fetchone()
+            if row is not None:
+                blobs[ch] = row[0]
             else:
-                db.execute("insert into vec_pages(page_id, embedding) values(?,?)", (pid, row[0]))
+                missing_text.append(p["markdown"])
+                missing_hash.append(ch)
+        if missing_text:
+            vectors = embed_documents(missing_text, client=self._embed_client)
+            if len(vectors) != len(missing_text):
+                raise RuntimeError("embedding count mismatch from Voyage")
+            for ch, vec in zip(missing_hash, vectors):
+                blobs[ch] = sqlite_vec.serialize_float32(vec)
 
-        if pending_text:
-            vectors = embed_documents(pending_text, client=self._embed_client)
-            for (pid, ch), vec in zip(pending_meta, vectors):
-                blob = sqlite_vec.serialize_float32(vec)
+        # All embeddings ready: now do the replacement as one atomic transaction.
+        try:
+            self._delete_pages(note_id)
+            db.execute(
+                "insert into notes(note_id,title,path,source_type,drive_mtime,synced_at) "
+                "values(?,?,?,?,?,?) on conflict(note_id) do update set "
+                "title=excluded.title, path=excluded.path, source_type=excluded.source_type, "
+                "drive_mtime=excluded.drive_mtime, synced_at=excluded.synced_at",
+                (note_id, title, path, source_type, drive_mtime, now),
+            )
+            for p in pages:
+                ch = content_hash(p["markdown"])
+                cur = db.execute(
+                    "insert into pages(note_id,page_num,total,content_hash,markdown) values(?,?,?,?,?)",
+                    (note_id, p["page_num"], p.get("total"), ch, p["markdown"]),
+                )
+                pid = cur.lastrowid
+                db.execute(
+                    "insert into pages_fts(rowid, markdown, title) values(?,?,?)",
+                    (pid, p["markdown"], title),
+                )
                 db.execute(
                     "insert or replace into embeddings(content_hash,model,dim,vector) values(?,?,?,?)",
-                    (ch, EMBED_MODEL, EMBED_DIM, blob),
+                    (ch, EMBED_MODEL, EMBED_DIM, blobs[ch]),
                 )
-                db.execute("insert into vec_pages(page_id, embedding) values(?,?)", (pid, blob))
+                db.execute("insert into vec_pages(page_id, embedding) values(?,?)", (pid, blobs[ch]))
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
 
-        db.commit()
-
-    def remove_note(self, note_id: str) -> None:
-        """Delete a note and its pages from the index (embeddings cache is left intact)."""
+    def _delete_pages(self, note_id: str) -> None:
         db = self.db
         for (pid,) in db.execute("select page_id from pages where note_id=?", (note_id,)).fetchall():
             db.execute("delete from pages_fts where rowid=?", (pid,))
             db.execute("delete from vec_pages where page_id=?", (pid,))
         db.execute("delete from pages where note_id=?", (note_id,))
-        db.execute("delete from notes where note_id=?", (note_id,))
-        db.commit()
+
+    def remove_note(self, note_id: str) -> None:
+        """Delete a note and its pages from the index (embeddings cache is left intact)."""
+        self._delete_pages(note_id)
+        self.db.execute("delete from notes where note_id=?", (note_id,))
+        self.db.commit()
 
     def fts_candidates(self, query: str, limit: int = 40) -> list[int]:
         """Return page_ids ranked by BM25 for the query (best first)."""
@@ -184,8 +199,10 @@ class NoteIndex:
 
     def page_ids_under(self, course: str) -> set[int]:
         """page_ids whose note_id is inside the given top-level course folder."""
+        # escape LIKE metacharacters so a course named 'CS_1' or 'A%B' matches literally
+        esc = course.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         rows = self.db.execute(
-            "select page_id from pages where note_id like ?", (course + "/%",)
+            "select page_id from pages where note_id like ? escape '\\'", (esc + "/%",)
         ).fetchall()
         return {r[0] for r in rows}
 

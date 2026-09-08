@@ -4,7 +4,7 @@ import * as pdfjs from "pdfjs-dist";
 import { EventBus, FindState, PDFFindController, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
-import { authHeaders, encId, pwParam } from "../lib/api";
+import { authHeaders, encId } from "../lib/api";
 import { useNote } from "../lib/queries";
 import { Button, Empty, Spinner } from "../components/ui";
 import { Markdown } from "../components/Markdown";
@@ -32,7 +32,7 @@ export default function Reader() {
     setState("loading");
     // highlight each significant word (array query = OR), not the phrase
     const terms = q.split(/\s+/).filter((w) => w.length > 2);
-    const url = "/api/pdf/" + encId(noteId) + "?_=1" + pwParam();
+    const url = "/api/pdf/" + encId(noteId);
     const task = pdfjs.getDocument({ url, httpHeaders: authHeaders() });
     task.promise.then((pdf) => {
       if (cancelled || !containerRef.current || !viewerRef.current) return;

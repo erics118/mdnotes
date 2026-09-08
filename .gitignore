@@ -1,5 +1,5 @@
-credentials/*.json
-credentials/token.json
+credentials/*
+!credentials/.gitkeep
 __pycache__/
 *.pyc
 .env

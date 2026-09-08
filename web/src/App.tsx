@@ -13,16 +13,19 @@ const Reader = lazy(() => import("./pages/Reader"));
 function SyncWatcher() {
   const { data } = useStatus();
   const qc = useQueryClient();
-  const wasRunning = useRef(false);
+  const refreshedFor = useRef<string | null>(null);
+  const started = data?.sync.started ?? null;
   const running = !!data?.sync.running;
   useEffect(() => {
-    if (wasRunning.current && !running) {
+    // key off the run id (`started`), not a running->idle edge: an empty or fully
+    // cached sync can finish before the next poll and never be observed as running.
+    if (started && !running && refreshedFor.current !== started) {
+      refreshedFor.current = started;
       for (const key of ["notes", "courses", "search", "folders", "note"]) {
         qc.invalidateQueries({ queryKey: [key] });
       }
     }
-    wasRunning.current = running;
-  }, [running, qc]);
+  }, [started, running, qc]);
   return null;
 }
 

@@ -11,13 +11,11 @@ def test_extract_pdf_pages(tmp_path):
 
     with patch("mdnotes.textbook.pdf_page_count", return_value=3), \
          patch("mdnotes.textbook.subprocess.run") as run:
-        run.side_effect = [
-            SimpleNamespace(stdout="page one text"),
-            SimpleNamespace(stdout="   "),          # blank page dropped
-            SimpleNamespace(stdout="page three text"),
-        ]
+        # one call, pages separated by form feed; blank middle page dropped
+        run.return_value = SimpleNamespace(stdout="page one text\f   \fpage three text\f")
         pages = extract_pdf_pages(pdf)
 
+    assert run.call_count == 1
     assert [p["page_num"] for p in pages] == [1, 3]
     assert pages[0]["total"] == 3
     assert pages[0]["markdown"] == "page one text"

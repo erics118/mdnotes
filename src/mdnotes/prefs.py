@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+from mdnotes.fsutil import atomic_write_text, read_json
+
 DEFAULT_PREFS = Path.home() / ".config" / "mdnotes" / "prefs.json"
 
 # Stored preference values for a folder
@@ -23,8 +25,9 @@ class SyncPrefs:
         # Migrates transparently from old flat format {folder_id: "yes"/"no"}
         # Settings stored under reserved key __settings__: {"folder_name": ..., "output_dir": ...}
         self._data: dict[str, dict] = {}
-        if self._path.exists():
-            raw = json.loads(self._path.read_text())
+        # a corrupt/partial file must not 500 every endpoint that reads prefs
+        raw = read_json(self._path, {})
+        if raw:
             for k, v in raw.items():
                 if isinstance(v, str):
                     # migrate old format
@@ -74,5 +77,4 @@ class SyncPrefs:
         )
 
     def _save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._data, indent=2))
+        atomic_write_text(self._path, json.dumps(self._data, indent=2))

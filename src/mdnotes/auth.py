@@ -4,6 +4,8 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+from mdnotes.fsutil import atomic_write_text
+
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 _BASE = Path(__file__).parent.parent.parent  # repo root
 TOKEN_PATH = _BASE / "credentials" / "token.json"
@@ -29,6 +31,7 @@ def get_drive_service():
         if not refreshed:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
-        TOKEN_PATH.write_text(creds.to_json())
+        # 0600: the refresh token must not be world-readable
+        atomic_write_text(TOKEN_PATH, creds.to_json(), mode=0o600)
 
     return build("drive", "v3", credentials=creds)

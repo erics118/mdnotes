@@ -24,7 +24,7 @@ def main():
               help="Directory to write .md files into. Saved after first use.")
 @click.option("--folder-name", default=None,
               help="Name of the GoodNotes folder in Google Drive. Saved after first use.")
-@click.option("--dpi", default=None, type=int,
+@click.option("--dpi", default=None, type=click.IntRange(50, 600),
               help=f"Rasterization DPI (higher = better quality, more tokens). Saved after first use. Default: {DEFAULT_DPI}.")
 @click.option("--cache", default=str(DEFAULT_CACHE), show_default=True,
               help="Path to transcription cache JSON.")
@@ -62,9 +62,13 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
     if output_dir is None:
         output_dir = saved_output or str(DEFAULT_NOTES)
 
-    # Resolve dpi: CLI flag > saved pref > default
+    # Resolve dpi: CLI flag > saved pref > default (clamp a bad saved value)
     if dpi is None:
-        dpi = int(saved_dpi) if saved_dpi is not None else DEFAULT_DPI
+        try:
+            dpi = int(saved_dpi) if saved_dpi is not None else DEFAULT_DPI
+        except ValueError:
+            dpi = DEFAULT_DPI
+        dpi = max(50, min(600, dpi))
 
     # Persist any newly provided values
     if folder_name and folder_name != saved_folder:
@@ -98,11 +102,13 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
         click.echo("Errors:", err=True)
         for e in result.errors:
             click.echo(f"  {e}", err=True)
+        # nonzero exit so headless scripts don't treat a partial sync as success
+        raise SystemExit(1)
 
 
 @main.command(name="index")
 @click.option("--output-dir", default=None,
-              help="Directory of .md notes to index. Defaults to saved output-dir or ~/notes.")
+              help="Directory of .md notes to index. Defaults to saved output-dir or the mdnotes data dir.")
 @click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
               help="Path to the SQLite search index.")
 @click.option("--rebuild", is_flag=True, default=False,
@@ -113,6 +119,9 @@ def index_cmd(output_dir, index_path, rebuild):
     if output_dir is None:
         output_dir = p.get_setting("output_dir") or str(DEFAULT_NOTES)
     out = Path(output_dir)
+    if not out.is_dir():
+        # guard: a missing/typo'd dir would scan nothing and (with --rebuild) prune the whole index
+        raise click.UsageError(f"notes directory does not exist: {out}")
     idx = NoteIndex(Path(index_path))
 
     count = 0
@@ -166,7 +175,9 @@ def search_cmd(query, top_k, index_path):
               help="Directory to write the extracted .md into.")
 @click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
               help="Path to the SQLite search index.")
-def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite an existing note with the same name.")
+def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path, force):
     """Ingest a printed PDF (e.g. a textbook) via its text layer into the search index."""
     p = SyncPrefs()
     if output_dir is None:
@@ -175,6 +186,9 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
     out.mkdir(parents=True, exist_ok=True)
 
     pdf = Path(pdf_path)
+    md_dest = out / f"{pdf.stem}.md"
+    if md_dest.exists() and not force:
+        raise click.UsageError(f"{md_dest} already exists; pass --force to overwrite.")
     pages = extract_pdf_pages(pdf)
     if not pages:
         click.echo("No extractable text layer found; this PDF may be scanned images.")
@@ -206,8 +220,14 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
 def serve(host, port, index_path):
     """Run the search web server (FastAPI)."""
     import os
-    from pathlib import Path
     import uvicorn
+    # binding beyond loopback exposes notes, PDFs, Drive browsing and sync to the network
+    loopback = {"127.0.0.1", "::1", "localhost"}
+    if host not in loopback and not os.environ.get("MDNOTES_PASSWORD"):
+        raise click.UsageError(
+            f"refusing to serve on {host} without MDNOTES_PASSWORD set "
+            "(that would expose your notes and controls to the network)."
+        )
     dist = Path(__file__).parent.parent.parent / "web" / "dist"
     if not dist.exists():
         click.echo(click.style(

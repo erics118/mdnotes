@@ -10,7 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from mdnotes.config import DEFAULT_NOTES, anthropic_key, voyage_key
-from mdnotes.drive import find_goodnotes_folder_id, list_folder_children, walk_folders
+from mdnotes.drive import list_folder_children, walk_folders
 from mdnotes.index import DEFAULT_INDEX, NoteIndex
 from mdnotes.pipeline import DEFAULT_CACHE, run_pipeline
 from mdnotes.prefs import NO, SyncPrefs, YES
@@ -18,6 +18,12 @@ from mdnotes.search import search as run_search
 
 INDEX_PATH = Path(os.environ.get("MDNOTES_INDEX", str(DEFAULT_INDEX)))
 PASSWORD = os.environ.get("MDNOTES_PASSWORD")
+if PASSWORD is not None:
+    try:
+        PASSWORD.encode("ascii")
+    except UnicodeEncodeError as e:
+        # HTTP Basic (btoa on the client, FastAPI's decoder) is ASCII-only
+        raise RuntimeError("MDNOTES_PASSWORD must be ASCII") from e
 
 app = FastAPI(title="mdnotes")
 security = HTTPBasic(auto_error=False)
@@ -31,10 +37,21 @@ _auth = {"running": False, "error": None}
 def require_auth(request: Request, creds: HTTPBasicCredentials | None = Depends(security)):
     if PASSWORD is None:
         return
-    supplied = (creds.password if creds else None) or request.query_params.get("pw")
+    # Basic auth only; a ?pw= query param would leak the password into logs and history
+    supplied = creds.password if creds else None
     if supplied is None or not secrets.compare_digest(supplied, PASSWORD):
         raise HTTPException(status_code=401, detail="unauthorized",
                             headers={"WWW-Authenticate": "Basic"})
+
+
+def block_cross_site(request: Request):
+    """Reject cross-site state-changing requests (CSRF) using the Fetch Metadata header.
+
+    A hostile page can POST to the default passwordless localhost server; the SPA's own
+    requests are same-origin. Absent header (non-browser clients, tests) is allowed.
+    """
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403, detail="cross-site request blocked")
 
 
 def _prefs() -> SyncPrefs:
@@ -72,6 +89,12 @@ def _drive_or_none():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(GReq())
+            # persist so we don't refresh again on every request
+            try:
+                from mdnotes.fsutil import atomic_write_text
+                atomic_write_text(TOKEN_PATH, creds.to_json(), mode=0o600)
+            except OSError:
+                pass
         if not creds.valid:
             return None
         return build("drive", "v3", credentials=creds)
@@ -103,12 +126,12 @@ def api_status(_=Depends(require_auth)):
 
 # ---------- google auth ----------
 @app.post("/api/auth/login")
-def api_login(_=Depends(require_auth)):
+def api_login(_=Depends(require_auth), __=Depends(block_cross_site)):
     if _auth["running"]:
         raise HTTPException(status_code=409, detail="auth already in progress")
+    _auth.update(running=True, error=None)  # reserve synchronously to close the double-start race
 
     def job():
-        _auth.update(running=True, error=None)
         try:
             from mdnotes.auth import get_drive_service
             get_drive_service()  # opens a browser locally and stores the token
@@ -142,7 +165,8 @@ def api_folders(_=Depends(require_auth)):
     try:
         folders = walk_folders(svc, root_id)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        print(f"walk_folders failed: {e}")
+        raise HTTPException(status_code=502, detail="failed to list Drive folders")
     prefs = _prefs()
     for f in folders:
         choice = prefs.get(f["id"])
@@ -151,7 +175,7 @@ def api_folders(_=Depends(require_auth)):
 
 
 @app.post("/api/folders")
-def api_set_folder(body: dict = Body(...), _=Depends(require_auth)):
+def api_set_folder(body: dict = Body(...), _=Depends(require_auth), __=Depends(block_cross_site)):
     folder_id = body.get("folder_id")
     choice = body.get("choice")
     name = body.get("name", "")
@@ -166,7 +190,7 @@ def api_set_folder(body: dict = Body(...), _=Depends(require_auth)):
 
 
 @app.post("/api/settings")
-def api_settings(body: dict = Body(...), _=Depends(require_auth)):
+def api_settings(body: dict = Body(...), _=Depends(require_auth), __=Depends(block_cross_site)):
     prefs = _prefs()
     for key in ("folder_name", "folder_id", "output_dir"):
         if body.get(key):
@@ -177,14 +201,15 @@ def api_settings(body: dict = Body(...), _=Depends(require_auth)):
 
 # ---------- sync ----------
 @app.post("/api/sync")
-def api_sync(_=Depends(require_auth)):
+def api_sync(_=Depends(require_auth), __=Depends(block_cross_site)):
     if _sync["running"]:
         raise HTTPException(status_code=409, detail="sync already running")
+    # reserve synchronously (before starting the thread) so two fast POSTs can't both pass
+    _sync.update(running=True, started=datetime.now(timezone.utc).isoformat(),
+                 result=None, error=None, stopping=False,
+                 progress={"file": None, "page": 0, "pages": 0, "done": 0})
 
     def job():
-        _sync.update(running=True, started=datetime.now(timezone.utc).isoformat(),
-                     result=None, error=None, stopping=False,
-                     progress={"file": None, "page": 0, "pages": 0, "done": 0})
         done = {"n": 0}
 
         def cb(ev):
@@ -222,7 +247,7 @@ def api_sync(_=Depends(require_auth)):
 
 
 @app.post("/api/sync/stop")
-def api_sync_stop(_=Depends(require_auth)):
+def api_sync_stop(_=Depends(require_auth), __=Depends(block_cross_site)):
     if _sync["running"]:
         _sync["stopping"] = True
     return {"stopping": _sync["running"]}
@@ -245,7 +270,8 @@ def api_notes(_=Depends(require_auth)):
 
 
 @app.get("/api/search")
-def api_search(q: str = Query(..., min_length=1), k: int = 15,
+def api_search(q: str = Query(..., min_length=1, max_length=500),
+               k: int = Query(15, ge=1, le=100),
                course: str | None = None, _=Depends(require_auth)):
     hits = run_search(_index(), q, k=k, course=course or None)
     return {"query": q, "course": course, "results": [h.__dict__ for h in hits]}
@@ -265,8 +291,9 @@ def api_pdf(note_id: str, _=Depends(require_auth)):
     if md:
         pdf = Path(md).with_suffix(".pdf")
         if pdf.exists():
+            # no-cache: a re-sync can replace this PDF, so the reader must revalidate
             return FileResponse(str(pdf), media_type="application/pdf",
-                                headers={"Cache-Control": "private, max-age=86400"})
+                                headers={"Cache-Control": "private, no-cache"})
     raise HTTPException(status_code=404, detail="pdf not available")
 
 
