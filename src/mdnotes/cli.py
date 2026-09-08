@@ -5,9 +5,8 @@ import click
 from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
 from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
-from mdnotes.index import (
-    NoteIndex, DEFAULT_INDEX, HANDWRITTEN, TEXTBOOK, parse_note_pages, detect_source_type,
-)
+from mdnotes.index import NoteIndex, DEFAULT_INDEX
+from mdnotes.notefmt import TEXTBOOK, build_note, page_block, parse_pages, source_type as detect_source_type
 from mdnotes.search import search as run_search
 from mdnotes.textbook import extract_pdf_pages
 
@@ -106,9 +105,10 @@ def index_cmd(output_dir, index_path, rebuild):
     count = 0
     for md in sorted(out.rglob("*.md")):
         text = md.read_text()
-        if "<!-- mdnotes: in progress" in text:
+        # skip interrupted syncs (new frontmatter status or legacy marker)
+        if "status: in_progress" in text or "<!-- mdnotes: in progress" in text:
             continue
-        pages = parse_note_pages(text)
+        pages = parse_pages(text)
         if not pages:
             continue
         note_id = md.relative_to(out).as_posix()
@@ -159,9 +159,8 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
         return
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    blocks = [f"<!-- page {pg['page_num']}/{pg['total']} -->\n{pg['markdown']}" for pg in pages]
-    md_text = (f"<!-- mdnotes: source: {source_type} -->\n"
-               f"<!-- mdnotes: synced: {now} -->\n\n" + "\n\n---\n\n".join(blocks))
+    blocks = [page_block(pg["page_num"], pg["total"], pg["markdown"]) for pg in pages]
+    md_text = build_note({"source_type": source_type, "synced": now}, blocks)
     md_path = out / f"{pdf.stem}.md"
     md_path.write_text(md_text)
 

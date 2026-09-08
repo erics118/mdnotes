@@ -55,17 +55,29 @@ mdnotes prefs   # interactive viewer for remembered folder sync preferences
 | `drive.py` | Google Drive API: find folder, list items, download PDF |
 | `rasterize.py` | `pdf_page_count`, `pdf_page_hash` (SHA-256 of raw content stream), `rasterize_page` (pdftoppm → JPEG bytes) |
 | `transcribe.py` | Claude Haiku vision call; `transcribe_page` accepts a `cache_key` to decouple hash from image bytes |
+| `notefmt.py` | Owns the `.md` file format: frontmatter + page-block parse/build (source of truth) |
 | `cache.py` | `TranscriptionCache` — JSON dict on disk, keyed by page hash |
 | `auth.py` | Google OAuth2 flow, returns Drive service |
 | `prefs.py` | Folder sync preferences (`yes`/`no`/`select`) persisted to `~/.config/mdnotes/prefs.json` |
+| `embed.py` | Voyage embeddings + rerank wrappers (`voyage-4-lite`, `rerank-3-lite`); optional `VOYAGE_MIN_INTERVAL` throttle |
+| `index.py` | `NoteIndex`: derived SQLite search index (FTS5 BM25 + sqlite-vec KNN), embedding cache |
+| `search.py` | Hybrid retrieval: vector + FTS candidates, RRF fusion, Voyage rerank |
+| `server.py` | FastAPI backend (`/api/search`, `/api/notes`, `/api/note`) + serves `web/`; single-password auth |
+| `textbook.py` | Ingest printed PDFs via `pdftotext` (no VLM) into the unified index |
 
 ## Output File Format Contracts
 
-These are load-bearing invariants — do not change the marker strings without updating all parsing code in `pipeline.py`.
+The note file format is owned by `notefmt.py` (`parse_frontmatter`, `parse_pages`, `build_note`). All read/write of the format goes through it; the search index is derived from these files. Reads stay backward-compatible with the pre-frontmatter `<!-- mdnotes: synced/in progress -->` comment headers.
+
+`drive_mtime` records the source PDF version so staleness/resume can detect a changed PDF; `status: in_progress` marks an interrupted sync (always re-synced next run). Page blocks are `<!-- page N/total -->` delimited, joined by `\n\n---\n\n`; the page regex requires the separator to be followed by a page marker, so a bare `---` inside transcribed content does not split a page.
 
 **Completed file:**
 ```
-<!-- mdnotes: synced: 2026-04-15T12:34:56.000000Z -->
+---
+source_type: handwritten
+drive_mtime: 2026-04-15T12:00:00.000000Z
+synced: 2026-04-15T12:34:56.000000Z
+---
 
 <!-- page 1/3 -->
 ...markdown...
@@ -74,27 +86,19 @@ These are load-bearing invariants — do not change the marker strings without u
 
 <!-- page 2/3 -->
 ...markdown...
+```
 
+**In-progress file** (interrupted sync):
+```
+---
+source_type: handwritten
+drive_mtime: 2026-04-15T12:00:00.000000Z
+status: in_progress
 ---
 
-<!-- page 3/3 -->
-...markdown...
-```
-
-**In-progress file** (interrupted sync — always re-synced on next run):
-```
 <!-- page 1/3 -->
 ...markdown...
-
----
-
-<!-- page 2/3 -->
-...markdown...
-
-<!-- mdnotes: in progress: 2026-04-15T12:34:56.000000Z -->
 ```
-
-The Drive `modifiedTime` is embedded in both markers so resume logic can detect if the PDF changed between an abort and restart.
 
 ## Cache Key Format
 

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from mdnotes.index import detect_source_type, HANDWRITTEN, TEXTBOOK
+from mdnotes.notefmt import source_type as detect_source_type, HANDWRITTEN, TEXTBOOK
 from mdnotes.textbook import extract_pdf_pages
 
 
@@ -24,5 +24,5 @@ def test_extract_pdf_pages(tmp_path):
 
 
 def test_detect_source_type():
-    assert detect_source_type("<!-- mdnotes: source: textbook -->\n...") == TEXTBOOK
-    assert detect_source_type("<!-- mdnotes: synced: x -->\n...") == HANDWRITTEN
+    assert detect_source_type("---\nsource_type: textbook\n---\n...") == TEXTBOOK
+    assert detect_source_type("---\nsynced: x\n---\n...") == HANDWRITTEN

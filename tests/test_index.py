@@ -1,7 +1,8 @@
 import hashlib
 from types import SimpleNamespace
 
-from mdnotes.index import NoteIndex, parse_note_pages, content_hash
+from mdnotes.index import NoteIndex, content_hash
+from mdnotes.notefmt import parse_pages
 
 
 class FakeVoyage:
@@ -84,13 +85,13 @@ def test_fts_and_vec_candidates_return_page_ids(tmp_path):
     assert len(vec) == 2
 
 
-def test_parse_note_pages():
+def test_parse_pages():
     text = (
-        "<!-- mdnotes: synced: 2026-04-15T12:00:00.000000Z -->\n\n"
+        "---\nsynced: 2026-04-15T12:00:00.000000Z\n---\n\n"
         "<!-- page 1/2 -->\nfirst page $x^2$\n\n---\n\n"
         "<!-- page 2/2 -->\nsecond page"
     )
-    pages = parse_note_pages(text)
+    pages = parse_pages(text)
     assert [p["page_num"] for p in pages] == [1, 2]
     assert pages[0]["markdown"] == "first page $x^2$"
     assert pages[1]["markdown"] == "second page"

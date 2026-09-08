@@ -10,6 +10,7 @@ import anthropic
 from mdnotes.cache import TranscriptionCache
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
+from mdnotes.notefmt import HANDWRITTEN, build_note, page_block, parse_frontmatter, parse_pages
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
 from mdnotes.transcribe import transcribe_page, TRANSCRIBE_VERSION
 
@@ -37,19 +38,24 @@ def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
     if not md_path.exists():
         return False
     text = md_path.read_text()
-    # A file with the in-progress marker was interrupted — always re-sync
+    current = _drive_mtime(file_meta["modifiedTime"])
+
+    meta, _ = parse_frontmatter(text)
+    if meta:
+        if meta.get("status") == "in_progress":
+            return False
+        recorded = meta.get("drive_mtime")
+        if recorded:
+            return _drive_mtime(recorded) >= current
+
+    # Legacy comment-format fallback (files written before frontmatter)
     if "<!-- mdnotes: in progress" in text:
         return False
-    # Prefer comparing recorded Drive mtime embedded in the file header
     m = re.search(r"<!-- mdnotes: synced: ([^-].*?) -->", text)
     if m:
-        recorded = _drive_mtime(m.group(1))
-        current = _drive_mtime(file_meta["modifiedTime"])
-        return recorded >= current
-    # Fallback for files written before the synced-header feature
-    drive_mtime = _drive_mtime(file_meta["modifiedTime"])
+        return _drive_mtime(m.group(1)) >= current
     local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
-    return local_mtime > drive_mtime
+    return local_mtime > current
 
 
 def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs,
@@ -133,18 +139,19 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
             resume_from = 1
             if not only_download and md_path.exists():
                 existing = md_path.read_text()
-                if "<!-- mdnotes: in progress" in existing:
-                    # Check whether the interrupted run was for the same PDF version
-                    m = re.search(r"<!-- mdnotes: in progress: (\S+?) -->", existing)
-                    same_version = m and m.group(1) == file_meta["modifiedTime"]
-                    if same_version:
-                        # Parse out completed page blocks — each starts with <!-- page N/total -->
-                        blocks = re.findall(r"<!-- page \d+/\d+ -->\n.*?(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|$)",
-                                            existing, re.DOTALL)
-                        if blocks:
-                            pages_done = blocks
-                            resume_from = len(blocks) + 1
-                            print(f"{indent}  Resuming from page {resume_from}/{total} ({len(blocks)} already written)")
+                meta, _ = parse_frontmatter(existing)
+                interrupted = meta.get("status") == "in_progress" or "<!-- mdnotes: in progress" in existing
+                if interrupted:
+                    recorded = meta.get("drive_mtime")
+                    if recorded is None:
+                        m = re.search(r"<!-- mdnotes: in progress: (\S+?) -->", existing)
+                        recorded = m.group(1) if m else None
+                    if recorded == file_meta["modifiedTime"]:
+                        parsed = parse_pages(existing)
+                        if parsed:
+                            pages_done = [page_block(p["page_num"], p["total"], p["markdown"]) for p in parsed]
+                            resume_from = len(pages_done) + 1
+                            print(f"{indent}  Resuming from page {resume_from}/{total} ({len(pages_done)} already written)")
                     else:
                         print(f"{indent}  PDF changed since last interrupted run — starting fresh")
 
@@ -169,13 +176,15 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                         page_md = transcribe_page(img, cache=cache, client=client, cache_key=key)
 
                 if not only_download:
-                    pages_done.append(f"<!-- page {page_num}/{total} -->\n{page_md}")
-                    # Rewrite file after each page with marker at end — marker absence = complete
-                    # Embed Drive modifiedTime so resume can detect if the PDF changed
-                    md_path.write_text(
-                        "\n\n---\n\n".join(pages_done)
-                        + f"\n\n<!-- mdnotes: in progress: {file_meta['modifiedTime']} -->"
-                    )
+                    pages_done.append(page_block(page_num, total, page_md))
+                    # Rewrite after each page; frontmatter status marks it incomplete
+                    # drive_mtime lets resume detect whether the PDF changed
+                    md_path.write_text(build_note(
+                        {"source_type": HANDWRITTEN,
+                         "drive_mtime": file_meta["modifiedTime"],
+                         "status": "in_progress"},
+                        pages_done,
+                    ))
 
             # pdf_path lives in _tmp for only_download (cleaned up by context manager);
             # for normal sync, unlink it explicitly
@@ -192,9 +201,14 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 # Record check so future only_download runs skip re-downloading this version
                 cache.set(check_key, "1")
             else:
-                # Write final file: synced header followed by page blocks, no in-progress marker
-                header = f"<!-- mdnotes: synced: {file_meta['modifiedTime']} -->"
-                md_path.write_text(header + "\n\n" + "\n\n---\n\n".join(pages_done))
+                # Write final file: frontmatter (no in-progress status) then page blocks
+                synced = datetime.now(timezone.utc).strftime(_DT_FMT)
+                md_path.write_text(build_note(
+                    {"source_type": HANDWRITTEN,
+                     "drive_mtime": file_meta["modifiedTime"],
+                     "synced": synced},
+                    pages_done,
+                ))
                 result.processed.append(name)
                 print(f"{indent}  Done → {md_path}")
         except Exception as exc:

@@ -7,39 +7,15 @@ from pathlib import Path
 import sqlite_vec
 
 from mdnotes.embed import EMBED_DIM, EMBED_MODEL, embed_documents
+from mdnotes.notefmt import HANDWRITTEN, TEXTBOOK
 
 DEFAULT_INDEX = Path.home() / ".cache" / "mdnotes" / "index.db"
 
-HANDWRITTEN = "handwritten"
-TEXTBOOK = "textbook"
-
 _WORD = re.compile(r"\w+")
-_PAGE_RE = re.compile(
-    r"<!-- page (\d+)/(\d+) -->\n(.*?)(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|\Z)",
-    re.DOTALL,
-)
-_SOURCE_RE = re.compile(r"<!-- mdnotes: source: (\w+) -->")
-
-
-def detect_source_type(text: str) -> str:
-    m = _SOURCE_RE.search(text)
-    return m.group(1) if m else HANDWRITTEN
 
 
 def content_hash(markdown: str) -> str:
     return hashlib.sha256(markdown.encode()).hexdigest()
-
-
-def parse_note_pages(text: str) -> list[dict]:
-    """Parse a finalized mdnotes `.md` into [{page_num, total, markdown}, ...]."""
-    pages = []
-    for m in _PAGE_RE.finditer(text):
-        pages.append({
-            "page_num": int(m.group(1)),
-            "total": int(m.group(2)),
-            "markdown": m.group(3).strip(),
-        })
-    return pages
 
 
 def _fts_query(text: str) -> str:
