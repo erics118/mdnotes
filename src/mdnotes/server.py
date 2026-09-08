@@ -270,6 +270,16 @@ def api_pdf(note_id: str, _=Depends(require_auth)):
     raise HTTPException(status_code=404, detail="pdf not available")
 
 
-_web = Path(__file__).parent.parent.parent / "web"
-if _web.exists():
-    app.mount("/", StaticFiles(directory=str(_web), html=True), name="web")
+_dist = Path(__file__).parent.parent.parent / "web" / "dist"
+if _dist.exists():
+    app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    def spa(full_path: str):
+        # API routes are registered above and match first; everything else is the SPA
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="not found")
+        f = _dist / full_path
+        if full_path and f.is_file():
+            return FileResponse(str(f))
+        return FileResponse(str(_dist / "index.html"))
