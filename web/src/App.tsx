@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useRef } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useStatus } from "./lib/queries";
+import { foldersQueryOptions, useStatus } from "./lib/queries";
 import Search from "./pages/Search";
 import Folders from "./pages/Folders";
 import Setup from "./pages/Setup";
@@ -29,6 +29,18 @@ function SyncWatcher() {
   return null;
 }
 
+// warm the (Drive-latency-bound) folder tree in the background once connected,
+// so opening the Folders tab is instant instead of a multi-second cold fetch
+function FoldersPrefetch() {
+  const { data } = useStatus();
+  const qc = useQueryClient();
+  const ready = !!data?.authed && !!data?.folder_configured;
+  useEffect(() => {
+    if (ready) qc.prefetchQuery(foldersQueryOptions);
+  }, [ready, qc]);
+  return null;
+}
+
 function Tab({ to, label }: { to: string; label: string }) {
   return (
     <NavLink
@@ -47,6 +59,7 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col">
       <SyncWatcher />
+      <FoldersPrefetch />
       <header className="flex-none border-b border-line px-5 py-2.5">
         <div className="mx-auto flex max-w-3xl items-center gap-4">
           <div className="text-[17px] font-bold tracking-tight">

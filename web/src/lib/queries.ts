@@ -49,13 +49,14 @@ export function useDriveChildren(parent: string) {
   });
 }
 
+export const foldersQueryOptions = {
+  queryKey: ["folders"],
+  queryFn: () => api.get<{ root: string; folders: SyncFolder[] }>("/api/folders"),
+  staleTime: 5 * 60 * 1000,
+};
+
 export function useFolders(enabled: boolean) {
-  return useQuery({
-    queryKey: ["folders"],
-    enabled,
-    queryFn: () => api.get<{ root: string; folders: SyncFolder[] }>("/api/folders"),
-    staleTime: 5 * 60 * 1000,
-  });
+  return useQuery({ ...foldersQueryOptions, enabled });
 }
 
 export function useLogin() {
