@@ -32,15 +32,25 @@ def search(
     index,
     query: str,
     k: int = 10,
+    course: str | None = None,
     embed_client=None,
     rerank_client=None,
     candidates: int = 40,
     fuse_top: int = 30,
 ) -> list[Hit]:
-    """Hybrid search: vector KNN + FTS BM25, RRF-fused, then Voyage rerank."""
+    """Hybrid search: vector KNN + FTS BM25, RRF-fused, then Voyage rerank.
+
+    course: restrict results to notes under that top-level folder.
+    """
     q_vec = embed_query(query, client=embed_client)
-    vec_ids = index.vec_candidates(q_vec, limit=candidates)
-    fts_ids = index.fts_candidates(query, limit=candidates)
+    # over-fetch when scoping to a course so the prefix filter still fills fuse_top
+    limit = candidates if course is None else max(candidates, 1000)
+    vec_ids = index.vec_candidates(q_vec, limit=limit)
+    fts_ids = index.fts_candidates(query, limit=limit)
+    if course:
+        allowed = index.page_ids_under(course)
+        vec_ids = [i for i in vec_ids if i in allowed]
+        fts_ids = [i for i in fts_ids if i in allowed]
     fused = rrf_fuse(vec_ids, fts_ids)[:fuse_top]
     if not fused:
         return []

@@ -172,6 +172,25 @@ class NoteIndex:
         keys = ["note_id", "title", "source_type", "path", "page_count"]
         return [dict(zip(keys, r)) for r in rows]
 
+    def page_ids_under(self, course: str) -> set[int]:
+        """page_ids whose note_id is inside the given top-level course folder."""
+        rows = self.db.execute(
+            "select page_id from pages where note_id like ?", (course + "/%",)
+        ).fetchall()
+        return {r[0] for r in rows}
+
+    def note_path(self, note_id: str) -> str | None:
+        row = self.db.execute("select path from notes where note_id=?", (note_id,)).fetchone()
+        return row[0] if row else None
+
+    def courses(self) -> list[str]:
+        """Distinct top-level folder names across all notes."""
+        seen = set()
+        for (nid,) in self.db.execute("select note_id from notes").fetchall():
+            if "/" in nid:
+                seen.add(nid.split("/", 1)[0])
+        return sorted(seen)
+
     def note_markdown(self, note_id: str) -> list[dict]:
         rows = self.db.execute(
             "select page_num, total, markdown from pages where note_id=? order by page_num",

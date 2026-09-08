@@ -186,10 +186,8 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                         pages_done,
                     ))
 
-            # pdf_path lives in _tmp for only_download (cleaned up by context manager);
-            # for normal sync, unlink it explicitly
-            if not only_download:
-                pdf_path.unlink(missing_ok=True)
+            # normal sync keeps the PDF next to the .md so the web reader can show it;
+            # only_download's pdf lives in _tmp and is cleaned up by the context manager
 
             if only_download:
                 if uncached:
