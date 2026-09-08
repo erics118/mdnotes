@@ -12,9 +12,10 @@ from mdnotes.config import anthropic_key
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
 from mdnotes.fsutil import atomic_write_text, safe_component
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
-from mdnotes.notefmt import HANDWRITTEN, build_note, page_block, parse_frontmatter, parse_pages
+from mdnotes.notefmt import HANDWRITTEN, TEXTBOOK, build_note, page_block, parse_frontmatter, parse_pages
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
 from mdnotes.transcribe import transcribe_page, read_cached, TRANSCRIBE_VERSION
+from mdnotes.textbook import extract_pdf_pages, has_text_layer
 
 DEFAULT_CACHE = Path.home() / ".cache" / "mdnotes" / "transcriptions.json"
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -146,6 +147,36 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
             if progress:
                 progress({"type": "file", "name": name, "path": _rel(md_path, root_output),
                           "page": 0, "pages": total})
+
+            # Printed PDFs (textbooks, exam solutions) already have a text layer; extract
+            # it with poppler instead of sending hundreds of pages to Claude vision.
+            if not only_download and has_text_layer(pdf_path):
+                print(f"{indent}  text layer detected - extracting as printed PDF (no vision)")
+                tb_pages = extract_pdf_pages(pdf_path)
+                synced = datetime.now(timezone.utc).strftime(_DT_FMT)
+                blocks = [page_block(p["page_num"], p["total"], p["markdown"]) for p in tb_pages]
+                atomic_write_text(md_path, build_note(
+                    {"source_type": TEXTBOOK,
+                     "drive_mtime": file_meta["modifiedTime"],
+                     "synced": synced},
+                    blocks,
+                ))
+                result.processed.append(name)
+                print(f"{indent}  Done (text layer) -> {md_path}")
+                if progress:
+                    progress({"type": "done", "name": name, "path": _rel(md_path, root_output)})
+                if note_index is not None and root_output is not None:
+                    try:
+                        note_index.upsert_note(
+                            md_path.relative_to(root_output).as_posix(), title=md_path.stem,
+                            pages=tb_pages, path=str(md_path), source_type=TEXTBOOK,
+                            drive_mtime=file_meta["modifiedTime"],
+                        )
+                        print(f"{indent}  Indexed")
+                    except Exception as ie:
+                        print(f"{indent}  Index error: {ie}")
+                        result.errors.append(f"{name} (index): {ie}")
+                return
 
             uncached = 0
 

@@ -151,6 +151,36 @@ def test_noninteractive_select_pref_falls_back_to_default(tmp_path):
     assert "MATH 3360" in result.skipped
 
 
+def test_printed_pdf_uses_text_layer_not_vision(tmp_path):
+    """A PDF with a text layer is extracted via pdftotext, never sent to Claude vision."""
+    pdf_path = tmp_path / "book.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    idx = MagicMock()
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.list_items", side_effect=[([], [_file_meta(name="book.pdf")])]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf_path), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=2), \
+         patch("mdnotes.pipeline.has_text_layer", return_value=True), \
+         patch("mdnotes.pipeline.extract_pdf_pages", return_value=[
+             {"page_num": 1, "total": 2, "markdown": "printed page one"},
+             {"page_num": 2, "total": 2, "markdown": "printed page two"}]), \
+         patch("mdnotes.pipeline.rasterize_page") as mock_raster, \
+         patch("mdnotes.pipeline.transcribe_page") as mock_transcribe, \
+         patch("mdnotes.index.NoteIndex", return_value=idx):
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes 5",
+            cache_path=tmp_path / "c.json", assume_yes=True, index_path=tmp_path / "idx.db",
+        )
+
+    mock_raster.assert_not_called()      # no rasterization
+    mock_transcribe.assert_not_called()  # no vision call
+    assert "book.pdf" in result.processed
+    text = (tmp_path / "book.md").read_text()
+    assert "source_type: textbook" in text and "printed page one" in text
+    assert idx.upsert_note.call_args.kwargs["source_type"] == "textbook"
+
+
 def test_explicit_ignore_overrides_parent_sync(tmp_path):
     """A child folder marked 'no' must be skipped even when its parent is marked 'yes'."""
     pdf_path = tmp_path / "note.pdf"

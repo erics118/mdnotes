@@ -13,8 +13,9 @@ The UI is a React SPA (`web/`) served by the FastAPI backend (`server.py`). Ever
 Pipeline per PDF:
 1. Check if local `.md` is up-to-date vs Drive `modifiedTime` (via embedded header)
 2. Download PDF to temp dir (or output dir for real sync)
-3. For each page: hash raw PDF content stream → check transcription cache → rasterize + transcribe on miss
-4. Write `.md` incrementally with in-progress marker; replace with final file on completion
+3. If the PDF has a real text layer (printed textbook/exam/solutions), extract it with `pdftotext` (no VLM) and finish; otherwise treat as handwriting
+4. Handwriting: for each page, hash raw PDF content stream → check transcription cache → rasterize + transcribe on miss
+5. Write `.md` incrementally with in-progress marker; replace with final file on completion
 
 ## System Dependencies
 
@@ -76,7 +77,7 @@ mdnotes prefs   # inspect remembered folder sync preferences
 | `index.py` | `NoteIndex`: derived SQLite search index (FTS5 BM25 + sqlite-vec KNN), embedding cache |
 | `search.py` | Hybrid retrieval: vector + FTS candidates, RRF fusion, Voyage rerank |
 | `server.py` | FastAPI backend: status, auth, Drive browse, folder prefs, sync (start/stop/progress), search/notes/note/pdf; serves the React SPA from `src/mdnotes/web_dist`; single-password auth |
-| `textbook.py` | Ingest printed PDFs via `pdftotext` (no VLM) into the unified index |
+| `textbook.py` | Ingest printed PDFs via `pdftotext` (no VLM); `has_text_layer` detects a printed PDF so the sync can route it here instead of Claude vision |
 | `web/` | React + Vite + TypeScript SPA (TanStack Query, React Router, Tailwind). Pages: Search, Folders, Setup, Reader. Built to `src/mdnotes/web_dist` (inside the package, so `pip install` ships it), served by `server.py`. |
 
 ## Output File Format Contracts
