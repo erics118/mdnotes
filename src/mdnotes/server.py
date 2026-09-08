@@ -47,6 +47,6 @@ def api_note(note_id: str, _=Depends(require_auth)):
     return {"note_id": note_id, "pages": pages}
 
 
-_web = Path(__file__).parent.parent.parent / "web" / "dist"
+_web = Path(__file__).parent.parent.parent / "web"
 if _web.exists():
     app.mount("/", StaticFiles(directory=str(_web), html=True), name="web")
