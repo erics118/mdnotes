@@ -38,7 +38,7 @@ export default function App() {
           <Route path="/" element={<Search />} />
           <Route path="/folders" element={<Folders />} />
           <Route path="/setup" element={<Setup />} />
-          <Route path="/note/:noteId" element={<Reader />} />
+          <Route path="/note/*" element={<Reader />} />
         </Routes>
       </main>
     </div>

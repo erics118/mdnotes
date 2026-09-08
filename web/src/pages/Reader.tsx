@@ -8,7 +8,8 @@ import { Markdown } from "../components/Markdown";
 const parts = (id: string) => id.replace(/\.md$/, "").split("/");
 
 export default function Reader() {
-  const { noteId = "" } = useParams();
+  const params = useParams();
+  const noteId = params["*"] || "";
   const [sp] = useSearchParams();
   const page = Number(sp.get("page") || "1");
   const nav = useNavigate();
