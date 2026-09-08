@@ -1,7 +1,8 @@
 import voyageai
 
-EMBED_MODEL = "voyage-3.5-lite"
-RERANK_MODEL = "rerank-2.5-lite"
+# current-gen lite models: same price as 3.5/2.5 lite but 200M free tokens each
+EMBED_MODEL = "voyage-4-lite"
+RERANK_MODEL = "rerank-3-lite"
 EMBED_DIM = 1024
 
 
