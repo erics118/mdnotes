@@ -1,6 +1,7 @@
 import base64
 import anthropic
 from mdnotes.cache import TranscriptionCache, page_hash
+from mdnotes.config import anthropic_key
 
 MODEL = "claude-haiku-4-5"
 # bump whenever MODEL or PROMPT changes so cached transcriptions invalidate
@@ -29,7 +30,7 @@ def transcribe_page(
                Pass a PDF-content hash to get stable cache hits across re-downloads.
     """
     if client is None:
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(api_key=anthropic_key())
 
     h = cache_key if cache_key is not None else page_hash(image_bytes)
     cached = cache.get(h)

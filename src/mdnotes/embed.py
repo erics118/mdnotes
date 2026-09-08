@@ -4,6 +4,8 @@ import time
 
 import voyageai
 
+from mdnotes.config import voyage_key
+
 # current-gen lite models: same price as 3.5/2.5 lite but 200M free tokens each
 EMBED_MODEL = "voyage-4-lite"
 RERANK_MODEL = "rerank-3-lite"
@@ -26,7 +28,7 @@ def _throttle():
 
 
 def _client(client):
-    return client if client is not None else voyageai.Client()
+    return client if client is not None else voyageai.Client(api_key=voyage_key())
 
 
 def embed_documents(texts: list[str], client=None) -> list[list[float]]:

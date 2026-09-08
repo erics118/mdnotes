@@ -8,6 +8,7 @@ from pathlib import Path
 import anthropic
 
 from mdnotes.cache import TranscriptionCache
+from mdnotes.config import anthropic_key
 from mdnotes.drive import find_goodnotes_folder_id, list_items, download_pdf
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
 from mdnotes.notefmt import HANDWRITTEN, build_note, page_block, parse_frontmatter, parse_pages
@@ -323,7 +324,7 @@ def run_pipeline(
 
     cache = TranscriptionCache(cache_path)
     # Client is only needed when actually transcribing
-    client = None if (dry_run or only_download) else anthropic.Anthropic()
+    client = None if (dry_run or only_download) else anthropic.Anthropic(api_key=anthropic_key())
     prefs = SyncPrefs()
     result = PipelineResult()
 
