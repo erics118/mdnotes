@@ -66,38 +66,43 @@ def list_folder_children(service, parent_id: str = "root") -> list[dict]:
 def walk_folders(service, root_id: str) -> list[dict]:
     """Return every folder under root_id as a flat list of {id, name, path, parent_id}.
 
-    Fetches all folders in one paginated query and builds the subtree in memory,
-    instead of a Drive round-trip per folder (which is very slow for large trees).
+    BFS the subtree one level at a time, batching each level's ids into an OR'd
+    `in parents` query, so we fetch only folders under root_id -- not every folder in
+    the Drive (a personal Drive has far more folders elsewhere).
     """
-    children: dict[str, list[dict]] = {}
-    page_token = None
-    while True:
-        resp = service.files().list(
-            q="mimeType='application/vnd.google-apps.folder' and trashed=false",
-            fields="nextPageToken, files(id, name, parents)",
-            pageSize=1000,
-            pageToken=page_token,
-        ).execute()
-        for f in resp.get("files", []):
-            for parent in f.get("parents") or []:
-                children.setdefault(parent, []).append(f)
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            break
-
     out: list[dict] = []
     seen: set[str] = set()
+    prefix_of: dict[str, str] = {root_id: ""}
+    frontier = [root_id]
 
-    def rec(folder_id, parent_id, prefix):
-        for s in sorted(children.get(folder_id, []), key=lambda x: x["name"].lower()):
-            if s["id"] in seen:  # guard against cycles and multi-parent folders
+    while frontier:
+        parents_set = set(frontier)
+        found: list[dict] = []
+        for i in range(0, len(frontier), 50):  # keep the OR clause a sane length
+            batch = frontier[i:i + 50]
+            clause = " or ".join(f"'{fid}' in parents" for fid in batch)
+            found.extend(_list_all(
+                service,
+                q=f"({clause}) and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                fields="nextPageToken, files(id, name, parents)",
+            ))
+
+        next_frontier: list[str] = []
+        for f in sorted(found, key=lambda x: x["name"].lower()):
+            if f["id"] in seen:  # guard against cycles and multi-parent folders
                 continue
-            seen.add(s["id"])
-            path = f"{prefix}/{s['name']}" if prefix else s["name"]
-            out.append({"id": s["id"], "name": s["name"], "path": path, "parent_id": parent_id})
-            rec(s["id"], s["id"], path)
+            parent = next((p for p in (f.get("parents") or []) if p in parents_set), None)
+            if parent is None:
+                continue
+            seen.add(f["id"])
+            prefix = prefix_of[parent]
+            path = f"{prefix}/{f['name']}" if prefix else f["name"]
+            out.append({"id": f["id"], "name": f["name"], "path": path,
+                        "parent_id": None if parent == root_id else parent})
+            prefix_of[f["id"]] = path
+            next_frontier.append(f["id"])
+        frontier = next_frontier
 
-    rec(root_id, None, "")
     return out
 
 

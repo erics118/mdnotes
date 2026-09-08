@@ -13,8 +13,9 @@ def test_list_folder_children_sorted(mock_drive_service):
     assert [f["name"] for f in out] == ["alpha", "Beta"]
 
 
-def test_walk_folders_builds_subtree_from_one_query(mock_drive_service):
-    # all folders in the drive come back in a single (paginated) query
+def test_walk_folders_builds_subtree(mock_drive_service):
+    # each BFS level queries by parent; the mock returns the full set and walk_folders
+    # keeps only the folders whose parent is in the current level (so 'other' is excluded)
     mock_drive_service.files().list().execute.return_value = {
         "files": [
             {"id": "c1", "name": "CS 2800", "parents": ["root"]},
