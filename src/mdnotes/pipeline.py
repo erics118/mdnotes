@@ -54,8 +54,8 @@ def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
     m = re.search(r"<!-- mdnotes: synced: ([^-].*?) -->", text)
     if m:
         return _drive_mtime(m.group(1)) >= current
-    local_mtime = datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc)
-    return local_mtime > current
+    # No recorded Drive provenance (old single-block format): re-sync to re-transcribe properly
+    return False
 
 
 def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs,

@@ -109,6 +109,13 @@ def test_is_up_to_date_false_when_drive_newer(tmp_path):
     assert _is_up_to_date({"modifiedTime": "2025-01-01T00:00:00.000000Z"}, md) is False
 
 
+def test_is_up_to_date_false_for_old_format_without_provenance(tmp_path):
+    """A note with no frontmatter/synced header (old single-block format) is re-synced."""
+    md = tmp_path / "old.md"
+    md.write_text("# 1/23\n\nSome transcription with no markers at all.")
+    assert _is_up_to_date({"modifiedTime": "2024-01-01T00:00:00.000000Z"}, md) is False
+
+
 def test_is_up_to_date_false_for_in_progress(tmp_path):
     """_is_up_to_date returns False for files with the in-progress marker."""
     md = tmp_path / "test.md"
