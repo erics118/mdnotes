@@ -45,12 +45,35 @@ def list_folder_children(service, parent_id: str = "root") -> list[dict]:
 
 
 def walk_folders(service, root_id: str) -> list[dict]:
-    """Return every folder under root_id as a flat list of {id, name, path, parent_id}."""
+    """Return every folder under root_id as a flat list of {id, name, path, parent_id}.
+
+    Fetches all folders in one paginated query and builds the subtree in memory,
+    instead of a Drive round-trip per folder (which is very slow for large trees).
+    """
+    children: dict[str, list[dict]] = {}
+    page_token = None
+    while True:
+        resp = service.files().list(
+            q="mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields="nextPageToken, files(id, name, parents)",
+            pageSize=1000,
+            pageToken=page_token,
+        ).execute()
+        for f in resp.get("files", []):
+            for parent in f.get("parents") or []:
+                children.setdefault(parent, []).append(f)
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+
     out: list[dict] = []
+    seen: set[str] = set()
 
     def rec(folder_id, parent_id, prefix):
-        subfolders, _ = list_items(service, folder_id)
-        for s in subfolders:
+        for s in sorted(children.get(folder_id, []), key=lambda x: x["name"].lower()):
+            if s["id"] in seen:  # guard against cycles and multi-parent folders
+                continue
+            seen.add(s["id"])
             path = f"{prefix}/{s['name']}" if prefix else s["name"]
             out.append({"id": s["id"], "name": s["name"], "path": path, "parent_id": parent_id})
             rec(s["id"], s["id"], path)

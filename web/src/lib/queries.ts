@@ -53,6 +53,7 @@ export function useFolders(enabled: boolean) {
     queryKey: ["folders"],
     enabled,
     queryFn: () => api.get<{ root: string; folders: SyncFolder[] }>("/api/folders"),
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -77,9 +78,22 @@ export function useSaveSettings() {
 
 export function useSetFolderPref() {
   const qc = useQueryClient();
+  type FoldersData = { root: string; folders: SyncFolder[] };
   return useMutation({
     mutationFn: (b: { folder_id: string; name: string; choice: string }) => api.post("/api/folders", b),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["folders"] }),
+    // update the cache in place so the toggle is instant; no refetch (that re-runs
+    // the slow Drive walk). roll back if the server rejects the change.
+    onMutate: async (b) => {
+      await qc.cancelQueries({ queryKey: ["folders"] });
+      const prev = qc.getQueryData<FoldersData>(["folders"]);
+      qc.setQueryData<FoldersData>(["folders"], (old) =>
+        old ? { ...old, folders: old.folders.map((f) => f.id === b.folder_id ? { ...f, choice: b.choice as SyncFolder["choice"] } : f) } : old,
+      );
+      return { prev };
+    },
+    onError: (_e, _b, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["folders"], ctx.prev);
+    },
   });
 }
 

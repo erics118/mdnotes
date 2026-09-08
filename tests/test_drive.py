@@ -13,16 +13,21 @@ def test_list_folder_children_sorted(mock_drive_service):
     assert [f["name"] for f in out] == ["alpha", "Beta"]
 
 
-def test_walk_folders_recurses():
-    tree = {
-        "root": ([{"id": "c1", "name": "CS 2800"}, {"id": "c2", "name": "MATH 3360"}], []),
-        "c1": ([{"id": "c1a", "name": "lecture"}], []),
-        "c1a": ([], []),
-        "c2": ([], []),
+def test_walk_folders_builds_subtree_from_one_query(mock_drive_service):
+    # all folders in the drive come back in a single (paginated) query
+    mock_drive_service.files().list().execute.return_value = {
+        "files": [
+            {"id": "c1", "name": "CS 2800", "parents": ["root"]},
+            {"id": "c2", "name": "MATH 3360", "parents": ["root"]},
+            {"id": "c1a", "name": "lecture", "parents": ["c1"]},
+            {"id": "other", "name": "Unrelated", "parents": ["someone-else"]},  # outside root
+        ]
     }
-    with patch("mdnotes.drive.list_items", side_effect=lambda svc, fid: tree.get(fid, ([], []))):
-        folders = walk_folders(object(), "root")
+    folders = walk_folders(mock_drive_service, "root")
     assert sorted(f["path"] for f in folders) == ["CS 2800", "CS 2800/lecture", "MATH 3360"]
+    # top-level parent_id is None; nested points at its parent id
+    by = {f["name"]: f["parent_id"] for f in folders}
+    assert by["CS 2800"] is None and by["lecture"] == "c1"
 
 
 def test_find_goodnotes_folder_id_returns_id(mock_drive_service):
