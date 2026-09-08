@@ -129,6 +129,39 @@ def test_noninteractive_honors_prefs_default_ignore(tmp_path):
     assert "MATH 4130" in result.skipped         # unset -> default ignore
 
 
+def test_run_pipeline_uses_root_id_directly(tmp_path):
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id") as find, \
+         patch("mdnotes.pipeline.list_items", return_value=([], [])):
+        run_pipeline(service=MagicMock(), output_dir=tmp_path, folder_name="x",
+                     cache_path=tmp_path / "c.json", interactive=False, root_id="ROOT")
+    find.assert_not_called()
+
+
+def test_should_stop_halts_before_processing(tmp_path):
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.list_items", return_value=([{"id": "a", "name": "MATH 2210"}], [])):
+        result = run_pipeline(service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+                              cache_path=tmp_path / "c.json", interactive=False, should_stop=lambda: True)
+    assert result.processed == []
+
+
+def test_progress_events_emitted(tmp_path):
+    pdf = tmp_path / "note.pdf"
+    pdf.write_bytes(b"%PDF")
+    events = []
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.list_items", side_effect=[([], [_file_meta(name="note.pdf", fid="f2")])]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
+         patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
+         patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+        run_pipeline(service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+                     cache_path=tmp_path / "c.json", assume_yes=True,
+                     progress=lambda e: events.append(e["type"]))
+    assert "file" in events and "page" in events and "done" in events
+
+
 def test_run_pipeline_skips_up_to_date_files(tmp_path):
     """If .md has a synced header matching Drive modifiedTime, skip the file."""
     mtime = "2024-01-01T00:00:00.000000Z"

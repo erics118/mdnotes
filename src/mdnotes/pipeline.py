@@ -34,6 +34,13 @@ def _drive_mtime(modified_time_str: str) -> datetime:
         return datetime.strptime(modified_time_str[:19] + "Z", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
+def _rel(md_path: Path, root_output: Path | None) -> str:
+    try:
+        return md_path.relative_to(root_output).as_posix() if root_output else md_path.name
+    except Exception:
+        return md_path.name
+
+
 def _is_up_to_date(file_meta: dict, md_path: Path) -> bool:
     """Return True if local .md was synced from the same (or newer) Drive version and is complete."""
     if not md_path.exists():
@@ -101,7 +108,8 @@ def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs,
 
 def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionCache,
                client: anthropic.Anthropic, result: PipelineResult, dpi: int, indent: str,
-               only_download: bool = False, note_index=None, root_output: Path | None = None) -> None:
+               only_download: bool = False, note_index=None, root_output: Path | None = None,
+               progress=None, should_stop=None) -> None:
     """Download, rasterize, transcribe, and save one PDF, page by page with cache.
 
     only_download: download and check per-page cache but skip transcription and writing.
@@ -132,6 +140,9 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
 
             total = pdf_page_count(pdf_path)
             print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
+            if progress:
+                progress({"type": "file", "name": name, "path": _rel(md_path, root_output),
+                          "page": 0, "pages": total})
 
             uncached = 0
 
@@ -160,6 +171,12 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 if page_num < resume_from:
                     print(f"{indent}    Page {page_num}/{total} — already written")
                     continue
+                if should_stop and should_stop():
+                    print(f"{indent}  stop requested, leaving '{name}' in progress")
+                    return
+                if progress:
+                    progress({"type": "page", "name": name, "path": _rel(md_path, root_output),
+                              "page": page_num, "pages": total})
 
                 key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}:v={TRANSCRIBE_VERSION}"
                 cached = cache.get(key)
@@ -211,6 +228,8 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 md_path.write_text(final_text)
                 result.processed.append(name)
                 print(f"{indent}  Done → {md_path}")
+                if progress:
+                    progress({"type": "done", "name": name, "path": _rel(md_path, root_output)})
                 if note_index is not None and root_output is not None:
                     try:
                         note_id = md_path.relative_to(root_output).as_posix()
@@ -236,7 +255,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                  folder_path: str | None = None, assume_yes: bool = False,
                  note_index=None, root_output: Path | None = None,
                  exclude: set[str] | None = None,
-                 interactive: bool = True, default_choice: str = NO) -> None:
+                 interactive: bool = True, default_choice: str = NO,
+                 progress=None, should_stop=None) -> None:
     """
     Recursively sync a Drive folder.
     mode: "yes" = sync all without asking, "no" = skip all, None = ask
@@ -275,6 +295,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
 
     # Recurse into subfolders
     for sub in subfolders:
+        if should_stop and should_stop():
+            return
         _sync_folder(
             service, sub["id"], sub["name"], folder_output,
             cache, client, prefs, result, dpi,
@@ -284,10 +306,13 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             folder_path=f"{full_path} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=root_output,
             exclude=exclude, interactive=interactive, default_choice=default_choice,
+            progress=progress, should_stop=should_stop,
         )
 
     # Sync PDFs
     for pdf in pdfs:
+        if should_stop and should_stop():
+            return
         name = pdf["name"]
         stem = Path(name).stem
         md_path = folder_output / f"{stem}.md"
@@ -312,7 +337,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                 result.processed.append(name)
         else:
             _sync_file(service, pdf, folder_output, cache, client, result, dpi, indent,
-                       only_download=only_download, note_index=note_index, root_output=root_output)
+                       only_download=only_download, note_index=note_index, root_output=root_output,
+                       progress=progress, should_stop=should_stop)
 
 
 def run_pipeline(
@@ -328,6 +354,9 @@ def run_pipeline(
     exclude: set[str] | None = None,
     interactive: bool = True,
     default_choice: str = NO,
+    progress=None,
+    should_stop=None,
+    root_id: str | None = None,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -350,12 +379,15 @@ def run_pipeline(
     if only_download:
         print("(download only — checking per-page cache, no transcription)\n")
 
-    root_id = find_goodnotes_folder_id(service, folder_name=folder_name)
+    if root_id is None:
+        root_id = find_goodnotes_folder_id(service, folder_name=folder_name)
 
     # List top-level contents and walk them
     subfolders, pdfs = list_items(service, root_id)
 
     for sub in subfolders:
+        if should_stop and should_stop():
+            return result
         _sync_folder(
             service, sub["id"], sub["name"], output_dir,
             cache, client, prefs, result, dpi,
@@ -363,10 +395,13 @@ def run_pipeline(
             folder_path=f"{folder_name} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=output_dir,
             exclude=exclude, interactive=interactive, default_choice=default_choice,
+            progress=progress, should_stop=should_stop,
         )
 
     # PDFs sitting directly in the root (not in a subfolder)
     for pdf in pdfs:
+        if should_stop and should_stop():
+            return result
         name = pdf["name"]
         stem = Path(name).stem
         md_path = output_dir / f"{stem}.md"
@@ -385,6 +420,7 @@ def run_pipeline(
             result.processed.append(name)
         else:
             _sync_file(service, pdf, output_dir, cache, client, result, dpi, indent="",
-                       only_download=only_download, note_index=note_index, root_output=output_dir)
+                       only_download=only_download, note_index=note_index, root_output=output_dir,
+                       progress=progress, should_stop=should_stop)
 
     return result

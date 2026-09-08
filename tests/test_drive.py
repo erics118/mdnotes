@@ -2,7 +2,15 @@
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 import pytest
-from mdnotes.drive import download_pdf, find_goodnotes_folder_id, list_items, walk_folders
+from mdnotes.drive import download_pdf, find_goodnotes_folder_id, list_items, list_folder_children, walk_folders
+
+
+def test_list_folder_children_sorted(mock_drive_service):
+    mock_drive_service.files().list().execute.return_value = {
+        "files": [{"id": "b", "name": "Beta"}, {"id": "a", "name": "alpha"}]
+    }
+    out = list_folder_children(mock_drive_service, "root")
+    assert [f["name"] for f in out] == ["alpha", "Beta"]
 
 
 def test_walk_folders_recurses():

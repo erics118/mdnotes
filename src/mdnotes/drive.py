@@ -35,6 +35,15 @@ def list_items(service, folder_id: str) -> tuple[list[dict], list[dict]]:
     return folders, pdfs
 
 
+def list_folder_children(service, parent_id: str = "root") -> list[dict]:
+    """Subfolders of parent_id ('root' for My Drive top level). For the setup folder browser."""
+    result = service.files().list(
+        q=f"mimeType='application/vnd.google-apps.folder' and '{parent_id}' in parents and trashed=false",
+        fields="files(id, name)",
+    ).execute()
+    return sorted(result.get("files", []), key=lambda f: f["name"].lower())
+
+
 def walk_folders(service, root_id: str) -> list[dict]:
     """Return every folder under root_id as a flat list of {id, name, path, parent_id}."""
     out: list[dict] = []

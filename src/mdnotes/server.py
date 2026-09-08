@@ -9,8 +9,8 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from mdnotes.config import anthropic_key, voyage_key
-from mdnotes.drive import find_goodnotes_folder_id, walk_folders
+from mdnotes.config import DEFAULT_NOTES, anthropic_key, voyage_key
+from mdnotes.drive import find_goodnotes_folder_id, list_folder_children, walk_folders
 from mdnotes.index import DEFAULT_INDEX, NoteIndex
 from mdnotes.pipeline import DEFAULT_CACHE, run_pipeline
 from mdnotes.prefs import NO, SyncPrefs, YES
@@ -23,7 +23,8 @@ app = FastAPI(title="mdnotes")
 security = HTTPBasic(auto_error=False)
 
 # background job state (single-user app)
-_sync = {"running": False, "started": None, "result": None, "error": None}
+_sync = {"running": False, "started": None, "result": None, "error": None,
+         "progress": None, "stopping": False}
 _auth = {"running": False, "error": None}
 
 
@@ -40,13 +41,19 @@ def _prefs() -> SyncPrefs:
     return SyncPrefs()
 
 
-def _folder_name() -> str:
-    return _prefs().get_setting("folder_name") or os.environ.get("MDNOTES_FOLDER") or "GoodNotes"
+def _folder_name() -> str | None:
+    # display name of the chosen notes folder
+    return _prefs().get_setting("folder_name") or os.environ.get("MDNOTES_FOLDER")
+
+
+def _folder_id() -> str | None:
+    # id of the notes folder chosen in the setup wizard (authoritative; handles nesting)
+    return _prefs().get_setting("folder_id") or os.environ.get("MDNOTES_FOLDER_ID")
 
 
 def _output_dir() -> Path:
     return Path(_prefs().get_setting("output_dir") or os.environ.get("MDNOTES_NOTES_DIR")
-                or str(Path.home() / "notes"))
+                or str(DEFAULT_NOTES))
 
 
 def _index() -> NoteIndex:
@@ -84,6 +91,8 @@ def api_status(_=Depends(require_auth)):
         "auth_running": _auth["running"],
         "auth_error": _auth["error"],
         "folder_name": _folder_name(),
+        "folder_id": _folder_id(),
+        "folder_configured": bool(_folder_id()),
         "output_dir": str(_output_dir()),
         "has_anthropic_key": bool(anthropic_key()),
         "has_voyage_key": bool(voyage_key()),
@@ -112,14 +121,25 @@ def api_login(_=Depends(require_auth)):
     return {"started": True}
 
 
+# ---------- notes folder (setup wizard) ----------
+@app.get("/api/drive/children")
+def api_drive_children(parent: str = "root", _=Depends(require_auth)):
+    svc = _drive_or_none()
+    if svc is None:
+        raise HTTPException(status_code=409, detail="not connected to Google Drive")
+    return {"parent": parent, "folders": list_folder_children(svc, parent)}
+
+
 # ---------- folder sync selection ----------
 @app.get("/api/folders")
 def api_folders(_=Depends(require_auth)):
     svc = _drive_or_none()
     if svc is None:
         raise HTTPException(status_code=409, detail="not connected to Google Drive")
+    root_id = _folder_id()
+    if not root_id:
+        raise HTTPException(status_code=409, detail="choose your notes folder in Setup first")
     try:
-        root_id = find_goodnotes_folder_id(svc, folder_name=_folder_name())
         folders = walk_folders(svc, root_id)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -148,10 +168,11 @@ def api_set_folder(body: dict = Body(...), _=Depends(require_auth)):
 @app.post("/api/settings")
 def api_settings(body: dict = Body(...), _=Depends(require_auth)):
     prefs = _prefs()
-    for key in ("folder_name", "output_dir"):
+    for key in ("folder_name", "folder_id", "output_dir"):
         if body.get(key):
             prefs.set_setting(key, body[key])
-    return {"folder_name": _folder_name(), "output_dir": str(_output_dir())}
+    return {"folder_name": _folder_name(), "folder_id": _folder_id(),
+            "output_dir": str(_output_dir())}
 
 
 # ---------- sync ----------
@@ -162,18 +183,35 @@ def api_sync(_=Depends(require_auth)):
 
     def job():
         _sync.update(running=True, started=datetime.now(timezone.utc).isoformat(),
-                     result=None, error=None)
+                     result=None, error=None, stopping=False,
+                     progress={"file": None, "page": 0, "pages": 0, "done": 0})
+        done = {"n": 0}
+
+        def cb(ev):
+            if ev.get("type") == "done":
+                done["n"] += 1
+            prev = _sync.get("progress") or {}
+            _sync["progress"] = {
+                "file": ev.get("path") or ev.get("name") or prev.get("file"),
+                "page": ev.get("page", prev.get("page", 0)),
+                "pages": ev.get("pages", prev.get("pages", 0)),
+                "done": done["n"],
+            }
+
         try:
             svc = _drive_or_none()
             if svc is None:
                 raise RuntimeError("not connected to Google Drive")
+            if not _folder_id():
+                raise RuntimeError("choose your notes folder in Setup first")
             res = run_pipeline(
-                service=svc, output_dir=_output_dir(), folder_name=_folder_name(),
-                cache_path=DEFAULT_CACHE, dpi=200, index_path=INDEX_PATH,
+                service=svc, output_dir=_output_dir(), folder_name=_folder_name() or "notes",
+                root_id=_folder_id(), cache_path=DEFAULT_CACHE, dpi=200, index_path=INDEX_PATH,
                 interactive=False, default_choice=NO,
+                progress=cb, should_stop=lambda: _sync["stopping"],
             )
             _sync["result"] = {"processed": res.processed, "skipped": res.skipped,
-                               "errors": res.errors}
+                               "errors": res.errors, "stopped": _sync["stopping"]}
         except Exception as e:
             _sync["error"] = str(e)
         finally:
@@ -181,6 +219,13 @@ def api_sync(_=Depends(require_auth)):
 
     threading.Thread(target=job, daemon=True).start()
     return {"started": True}
+
+
+@app.post("/api/sync/stop")
+def api_sync_stop(_=Depends(require_auth)):
+    if _sync["running"]:
+        _sync["stopping"] = True
+    return {"stopping": _sync["running"]}
 
 
 @app.get("/api/sync/status")

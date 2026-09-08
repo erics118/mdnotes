@@ -100,7 +100,7 @@ def test_folders_lists_with_choice():
     prefs.get.side_effect = lambda fid: {"c1": "no"}.get(fid)  # CS 2800 ignored
     with patch.object(server, "PASSWORD", None), \
          patch.object(server, "_drive_or_none", return_value=MagicMock()), \
-         patch.object(server, "find_goodnotes_folder_id", return_value="root"), \
+         patch.object(server, "_folder_id", return_value="rootid"), \
          patch.object(server, "walk_folders", return_value=[
              {"id": "c1", "name": "CS 2800", "path": "CS 2800", "parent_id": None},
              {"id": "c2", "name": "MATH 3360", "path": "MATH 3360", "parent_id": None}]), \
@@ -111,6 +111,25 @@ def test_folders_lists_with_choice():
     assert by["CS 2800"] == "ignore" and by["MATH 3360"] == "default"
 
 
+def test_folders_requires_folder_chosen():
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None), \
+         patch.object(server, "_drive_or_none", return_value=MagicMock()), \
+         patch.object(server, "_folder_id", return_value=None):
+        r = client.get("/api/folders")
+    assert r.status_code == 409
+
+
+def test_drive_children():
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None), \
+         patch.object(server, "_drive_or_none", return_value=MagicMock()), \
+         patch.object(server, "list_folder_children", return_value=[{"id": "x", "name": "GoodNotes"}]):
+        r = client.get("/api/drive/children", params={"parent": "root"})
+    assert r.status_code == 200
+    assert r.json()["folders"][0]["name"] == "GoodNotes"
+
+
 def test_set_folder_pref():
     client = TestClient(server.app)
     prefs = MagicMock()
@@ -118,6 +137,20 @@ def test_set_folder_pref():
         r = client.post("/api/folders", json={"folder_id": "c1", "name": "CS 2800", "choice": "sync"})
     assert r.status_code == 200
     prefs.set.assert_called_once()
+
+
+def test_sync_stop_sets_flag():
+    client = TestClient(server.app)
+    server._sync["running"] = True
+    server._sync["stopping"] = False
+    try:
+        with patch.object(server, "PASSWORD", None):
+            r = client.post("/api/sync/stop")
+        assert r.json()["stopping"] is True
+        assert server._sync["stopping"] is True
+    finally:
+        server._sync["running"] = False
+        server._sync["stopping"] = False
 
 
 def test_sync_conflict_when_running():
