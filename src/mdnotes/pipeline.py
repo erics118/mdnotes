@@ -233,7 +233,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                  indent: str = "", mode: str | None = None,
                  dry_run: bool = False, only_download: bool = False,
                  folder_path: str | None = None, assume_yes: bool = False,
-                 note_index=None, root_output: Path | None = None) -> None:
+                 note_index=None, root_output: Path | None = None,
+                 exclude: set[str] | None = None) -> None:
     """
     Recursively sync a Drive folder.
     mode: "yes" = sync all without asking, "no" = skip all, None = ask
@@ -242,6 +243,10 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
     folder_path: full slash-separated path for display in saved prefs
     """
     full_path = folder_path or folder_name
+    if exclude and folder_name in exclude:
+        print(f"{indent}Folder '{folder_name}' excluded, skipping")
+        result.skipped.append(folder_name)
+        return
     subfolders, pdfs = list_items(service, folder_id)
 
     if mode is None:
@@ -268,6 +273,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{full_path} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=root_output,
+            exclude=exclude,
         )
 
     # Sync PDFs
@@ -309,9 +315,11 @@ def run_pipeline(
     only_download: bool = False,
     assume_yes: bool = False,
     index_path: Path | None = None,
+    exclude: set[str] | None = None,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    exclude = set(exclude or [])
 
     cache = TranscriptionCache(cache_path)
     # Client is only needed when actually transcribing
@@ -342,6 +350,7 @@ def run_pipeline(
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{folder_name} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=output_dir,
+            exclude=exclude,
         )
 
     # PDFs sitting directly in the root (not in a subfolder)

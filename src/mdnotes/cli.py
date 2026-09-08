@@ -37,8 +37,10 @@ def main():
               help="Search index to update as notes are transcribed.")
 @click.option("--no-index", is_flag=True, default=False,
               help="Skip updating the search index during sync.")
+@click.option("--exclude", multiple=True,
+              help="Folder name to skip (repeatable), e.g. --exclude 'CS 3110'.")
 def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
-         no_prompt, index_path, no_index):
+         no_prompt, index_path, no_index, exclude):
     """Download PDFs from Google Drive and transcribe handwriting to Markdown."""
     p = SyncPrefs()
 
@@ -84,6 +86,7 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
         only_download=only_download,
         assume_yes=no_prompt,
         index_path=None if no_index else Path(index_path),
+        exclude=set(exclude),
     )
 
     if result.processed:

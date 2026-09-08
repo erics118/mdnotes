@@ -70,6 +70,30 @@ def test_sync_no_prompt_auto_indexes(tmp_path):
     assert idx.upsert_note.call_args[0][0] == "Math Notes.md"  # root-relative note_id
 
 
+def test_sync_excludes_named_folder(tmp_path):
+    """--exclude skips a folder entirely, even under --no-prompt."""
+    pdf_path = tmp_path / "note.pdf"
+    pdf_path.write_bytes(b"%PDF")
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.list_items", side_effect=[
+             ([{"id": "a", "name": "MATH 2210"}, {"id": "b", "name": "CS 3110"}], []),
+             ([], [_file_meta(name="note.pdf", fid="f2")]),  # contents of MATH 2210
+         ]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf_path), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
+         patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
+         patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+            cache_path=tmp_path / "c.json", assume_yes=True, exclude={"CS 3110"},
+        )
+
+    assert "CS 3110" in result.skipped
+    assert "note.pdf" in result.processed
+
+
 def test_run_pipeline_skips_up_to_date_files(tmp_path):
     """If .md has a synced header matching Drive modifiedTime, skip the file."""
     mtime = "2024-01-01T00:00:00.000000Z"
