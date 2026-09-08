@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 import mdnotes.server as server
@@ -63,6 +64,17 @@ def test_pdf_served_when_present(tmp_path):
         r = client.get("/api/pdf/n.md")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/pdf")
+
+
+def test_pdf_head_probe_ok(tmp_path):
+    # the reader probes with HEAD before embedding the PDF; must not 405
+    md = tmp_path / "n.md"
+    (tmp_path / "n.pdf").write_bytes(b"%PDF-1.7 fake")
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None), patch.object(server, "_index") as idx:
+        idx.return_value.note_path.return_value = str(md)
+        r = client.head("/api/pdf/n.md")
+    assert r.status_code == 200
 
 
 def test_pdf_404_when_missing(tmp_path):
@@ -162,6 +174,18 @@ def test_sync_conflict_when_running():
         assert r.status_code == 409
     finally:
         server._sync["running"] = False
+
+
+def test_spa_blocks_path_traversal():
+    if not server._dist.exists():
+        pytest.skip("web/dist not built")
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None):
+        r = client.get("/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd")
+    # falls back to the SPA shell, never serves a file outside dist
+    assert r.status_code == 200
+    assert b"root:" not in r.content
+    assert b'<div id="root">' in r.content
 
 
 def test_search_passes_course():

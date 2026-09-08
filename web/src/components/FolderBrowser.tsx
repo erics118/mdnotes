@@ -23,6 +23,11 @@ export function FolderBrowser({ onSelect }: { onSelect: (f: DriveFolder) => void
             </button>
           </span>
         ))}
+        {current.id !== "root" && (
+          <Button variant="ghost" className="ml-auto px-2.5 py-1 text-xs" onClick={() => onSelect(current)}>
+            Use this folder
+          </Button>
+        )}
       </div>
       <div className="max-h-72 overflow-auto p-1">
         {children.isLoading && <div className="p-3 text-sm text-muted"><Spinner /> Loading...</div>}

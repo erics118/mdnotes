@@ -129,6 +129,28 @@ def test_noninteractive_honors_prefs_default_ignore(tmp_path):
     assert "MATH 4130" in result.skipped         # unset -> default ignore
 
 
+def test_noninteractive_select_pref_falls_back_to_default(tmp_path):
+    """A legacy 'select' pref (interactive-only) must not auto-sync in non-interactive mode."""
+    prefs = SyncPrefs(path=tmp_path / "prefs.json")
+    prefs.set("s", "select", name="MATH 3360")  # legacy CLI pref
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.SyncPrefs", return_value=prefs), \
+         patch("mdnotes.pipeline.list_items", side_effect=[
+             ([{"id": "s", "name": "MATH 3360"}], []),                  # root
+             ([], [_file_meta(name="z.pdf", fid="f9")]),                # MATH 3360 (non-empty)
+         ]), \
+         patch("mdnotes.pipeline.download_pdf") as mock_dl, \
+         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+            cache_path=tmp_path / "c.json", interactive=False,  # default_choice=NO
+        )
+
+    mock_dl.assert_not_called()
+    assert "MATH 3360" in result.skipped
+
+
 def test_run_pipeline_uses_root_id_directly(tmp_path):
     with patch("mdnotes.pipeline.find_goodnotes_folder_id") as find, \
          patch("mdnotes.pipeline.list_items", return_value=([], [])):

@@ -278,10 +278,10 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         if assume_yes:
             mode = YES
         elif not interactive:
-            # web/scheduled sync: resolve from saved prefs, no prompting; SELECT means include
-            mode = prefs.get(folder_id) or default_choice
-            if mode == SELECT:
-                mode = YES
+            # web/scheduled sync: no prompting, so only an explicit yes/no counts;
+            # SELECT (interactive-only) and no pref fall back to default_choice
+            stored = prefs.get(folder_id)
+            mode = stored if stored in (YES, NO) else default_choice
         else:
             mode = _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
 

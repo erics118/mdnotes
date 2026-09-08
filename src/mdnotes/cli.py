@@ -116,6 +116,7 @@ def index_cmd(output_dir, index_path, rebuild):
     idx = NoteIndex(Path(index_path))
 
     count = 0
+    seen: set[str] = set()
     for md in sorted(out.rglob("*.md")):
         text = md.read_text()
         # skip interrupted syncs (new frontmatter status or legacy marker)
@@ -125,10 +126,18 @@ def index_cmd(output_dir, index_path, rebuild):
         if not pages:
             continue
         note_id = md.relative_to(out).as_posix()
+        seen.add(note_id)
         idx.upsert_note(note_id, title=md.stem, pages=pages,
                         path=str(md), source_type=detect_source_type(text))
         count += 1
         click.echo(f"indexed {note_id} ({len(pages)} pages)")
+
+    if rebuild:
+        stale = [n["note_id"] for n in idx.list_notes() if n["note_id"] not in seen]
+        for note_id in stale:
+            idx.remove_note(note_id)
+            click.echo(f"pruned {note_id}")
+
     click.echo(f"\nindexed {count} notes -> {index_path}")
 
 
@@ -177,6 +186,12 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
     md_path = out / f"{pdf.stem}.md"
     md_path.write_text(md_text)
 
+    # keep the PDF beside the note so the reader can serve the original
+    pdf_dest = md_path.with_suffix(".pdf")
+    if pdf.resolve() != pdf_dest.resolve():
+        import shutil
+        shutil.copy2(pdf, pdf_dest)
+
     idx = NoteIndex(Path(index_path))
     idx.upsert_note(md_path.relative_to(out).as_posix(), title=pdf.stem, pages=pages,
                     path=str(md_path), source_type=source_type)
@@ -191,8 +206,15 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
 def serve(host, port, index_path):
     """Run the search web server (FastAPI)."""
     import os
+    from pathlib import Path
     import uvicorn
+    dist = Path(__file__).parent.parent.parent / "web" / "dist"
+    if not dist.exists():
+        click.echo(click.style(
+            "warning: web/dist not found; the UI will 404. build it with "
+            "`npm --prefix web install && npm --prefix web run build`.", fg="yellow"))
     os.environ["MDNOTES_INDEX"] = index_path
+    click.echo(f"serving on http://{host}:{port}")
     uvicorn.run("mdnotes.server:app", host=host, port=port)
 
 

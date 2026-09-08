@@ -8,6 +8,9 @@ function authHeader(): Record<string, string> {
   const p = pw();
   return p ? { Authorization: "Basic " + btoa(":" + p) } : {};
 }
+export function authHeaders(): Record<string, string> {
+  return authHeader();
+}
 export function pwParam(): string {
   const p = pw();
   return p ? "&pw=" + encodeURIComponent(p) : "";
@@ -45,10 +48,6 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   });
   if (!r.ok) throw new Error(await detail(r));
   return r.json() as Promise<T>;
-}
-
-export async function headOk(path: string): Promise<boolean> {
-  try { return (await req(path, { method: "HEAD" })).ok; } catch { return false; }
 }
 
 // ---- types ----

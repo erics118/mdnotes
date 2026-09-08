@@ -131,6 +131,16 @@ class NoteIndex:
 
         db.commit()
 
+    def remove_note(self, note_id: str) -> None:
+        """Delete a note and its pages from the index (embeddings cache is left intact)."""
+        db = self.db
+        for (pid,) in db.execute("select page_id from pages where note_id=?", (note_id,)).fetchall():
+            db.execute("delete from pages_fts where rowid=?", (pid,))
+            db.execute("delete from vec_pages where page_id=?", (pid,))
+        db.execute("delete from pages where note_id=?", (note_id,))
+        db.execute("delete from notes where note_id=?", (note_id,))
+        db.commit()
+
     def fts_candidates(self, query: str, limit: int = 40) -> list[int]:
         """Return page_ids ranked by BM25 for the query (best first)."""
         match = _fts_query(query)

@@ -259,7 +259,7 @@ def api_note(note_id: str, _=Depends(require_auth)):
     return {"note_id": note_id, "pages": pages}
 
 
-@app.get("/api/pdf/{note_id:path}")
+@app.api_route("/api/pdf/{note_id:path}", methods=["GET", "HEAD"])
 def api_pdf(note_id: str, _=Depends(require_auth)):
     md = _index().note_path(note_id)
     if md:
@@ -274,12 +274,15 @@ _dist = Path(__file__).parent.parent.parent / "web" / "dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
 
+    _dist_root = _dist.resolve()
+
     @app.get("/{full_path:path}")
     def spa(full_path: str):
         # API routes are registered above and match first; everything else is the SPA
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="not found")
-        f = _dist / full_path
-        if full_path and f.is_file():
+        f = (_dist / full_path).resolve()
+        # never serve outside dist (guards path traversal like ../../etc/passwd)
+        if full_path and f.is_file() and f.is_relative_to(_dist_root):
             return FileResponse(str(f))
-        return FileResponse(str(_dist / "index.html"))
+        return FileResponse(str(_dist_root / "index.html"))

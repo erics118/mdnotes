@@ -12,8 +12,8 @@ export function Button({
   return <button className={`${base} ${styles} ${className}`} {...props} />;
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-xl border border-line bg-panel p-4 shadow-sm ${className}`}>{children}</div>;
+export function Card({ children, className = "", onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
+  return <div onClick={onClick} className={`rounded-xl border border-line bg-panel p-4 shadow-sm ${className}`}>{children}</div>;
 }
 
 export function Badge({ children, tone = "accent" }: { children: ReactNode; tone?: "accent" | "muted" }) {
