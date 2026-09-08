@@ -14,7 +14,7 @@ from mdnotes.fsutil import atomic_write_text, safe_component
 from mdnotes.prefs import SyncPrefs, YES, NO, SELECT
 from mdnotes.notefmt import HANDWRITTEN, build_note, page_block, parse_frontmatter, parse_pages
 from mdnotes.rasterize import pdf_page_count, pdf_page_hash, rasterize_page
-from mdnotes.transcribe import transcribe_page, TRANSCRIBE_VERSION
+from mdnotes.transcribe import transcribe_page, read_cached, TRANSCRIBE_VERSION
 
 DEFAULT_CACHE = Path.home() / ".cache" / "mdnotes" / "transcriptions.json"
 _DT_FMT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -164,7 +164,7 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                     if recorded == file_meta["modifiedTime"]:
                         parsed = parse_pages(existing)
                         if parsed:
-                            pages_done = [page_block(p["page_num"], p["total"], p["markdown"]) for p in parsed]
+                            pages_done = [page_block(p["page_num"], p["total"], p["markdown"], p.get("search_context", "")) for p in parsed]
                             resume_from = len(pages_done) + 1
                             print(f"{indent}  Resuming from page {resume_from}/{total} ({len(pages_done)} already written)")
                     else:
@@ -182,10 +182,10 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                               "page": page_num, "pages": total})
 
                 key = f"{pdf_page_hash(pdf_path, page_num)}:dpi={dpi}:v={TRANSCRIBE_VERSION}"
-                cached = cache.get(key)
-                if cached is not None:
+                hit = read_cached(cache, key)
+                if hit is not None:
                     print(f"{indent}    Page {page_num}/{total} — cached")
-                    page_md = cached
+                    page_md, page_ctx = hit
                 else:
                     uncached += 1
                     if only_download:
@@ -194,10 +194,10 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                     else:
                         print(f"{indent}    Page {page_num}/{total} — transcribing...")
                         img = rasterize_page(pdf_path, page_num, dpi=dpi)
-                        page_md = transcribe_page(img, cache=cache, client=client, cache_key=key)
+                        page_md, page_ctx = transcribe_page(img, cache=cache, client=client, cache_key=key)
 
                 if not only_download:
-                    pages_done.append(page_block(page_num, total, page_md))
+                    pages_done.append(page_block(page_num, total, page_md, page_ctx))
                     # Rewrite after each page; frontmatter status marks it incomplete
                     # drive_mtime lets resume detect whether the PDF changed
                     md_path.write_text(build_note(

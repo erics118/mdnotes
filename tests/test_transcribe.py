@@ -29,10 +29,27 @@ def test_transcribe_page_calls_claude(tmp_path):
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _response("# My Notes\n- item 1")
 
-    result = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client)
+    markdown, context = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client)
 
-    assert result == "# My Notes\n- item 1"
+    assert markdown == "# My Notes\n- item 1"
+    assert context == ""
     mock_client.messages.create.assert_called_once()
+
+
+def test_transcribe_page_splits_search_context(tmp_path):
+    """Text after the marker is returned as hidden search context, not markdown."""
+    cache = _make_cache(tmp_path)
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = _response(
+        "# Groups\n$G/H$\n===SEARCH_CONTEXT===\nQuotient groups. ker -> kernel."
+    )
+
+    markdown, context = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client, cache_key="k")
+
+    assert markdown == "# Groups\n$G/H$"
+    assert "quotient" in context.lower() and "kernel" in context.lower()
+    # round-trips through the cache
+    assert transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client, cache_key="k") == (markdown, context)
 
 
 def test_transcribe_page_rejects_truncated_response(tmp_path):
@@ -49,12 +66,12 @@ def test_transcribe_page_rejects_truncated_response(tmp_path):
 def test_transcribe_page_with_explicit_cache_key(tmp_path):
     """When cache_key is given, that key is used instead of hashing image_bytes."""
     cache = _make_cache(tmp_path)
-    cache.set("pdf-hash:dpi=150", "pre-cached content")
+    cache.set("pdf-hash:dpi=150", "pre-cached content")  # legacy plain-string cache value
     mock_client = MagicMock()
 
     result = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client, cache_key="pdf-hash:dpi=150")
 
-    assert result == "pre-cached content"
+    assert result == ("pre-cached content", "")
     mock_client.messages.create.assert_not_called()
 
 
@@ -69,7 +86,7 @@ def test_transcribe_page_uses_cache_on_second_call(tmp_path):
     # Second call — should be a cache hit
     result = transcribe_page(FAKE_IMAGE, cache=cache, client=mock_client)
 
-    assert result == "cached markdown"
+    assert result == ("cached markdown", "")
     assert mock_client.messages.create.call_count == 1  # only called once
 
 

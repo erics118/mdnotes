@@ -11,6 +11,24 @@ _PAGE_RE = re.compile(
     re.DOTALL,
 )
 
+# a hidden, index-only enrichment block trailing a page's markdown (never displayed);
+# feeds the embedding + FTS index to bridge terse math notation and plain-language queries
+_CONTEXT_RE = re.compile(r"\n\n<!-- mdnotes:context\n(.*?)\n-->\s*$", re.DOTALL)
+
+
+def _sanitize_context(s: str) -> str:
+    """Keep the context body from breaking page/comment parsing."""
+    s = s.replace("-->", "--").strip()
+    return s.replace("\n---\n", "\n- - -\n")
+
+
+def split_context(page_content: str) -> tuple[str, str]:
+    """Split a page's body into (displayed markdown, hidden search context)."""
+    m = _CONTEXT_RE.search(page_content)
+    if not m:
+        return page_content.strip(), ""
+    return page_content[:m.start()].strip(), m.group(1).strip()
+
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split leading YAML frontmatter (simple key: value lines) from the body."""
@@ -37,17 +55,23 @@ def build_note(meta: dict, page_blocks: list[str]) -> str:
     return build_frontmatter(meta) + "\n" + "\n\n---\n\n".join(page_blocks)
 
 
-def page_block(page_num: int, total: int, markdown: str) -> str:
-    return f"<!-- page {page_num}/{total} -->\n{markdown}"
+def page_block(page_num: int, total: int, markdown: str, search_context: str = "") -> str:
+    block = f"<!-- page {page_num}/{total} -->\n{markdown}"
+    ctx = _sanitize_context(search_context) if search_context else ""
+    if ctx:
+        block += f"\n\n<!-- mdnotes:context\n{ctx}\n-->"
+    return block
 
 
 def parse_pages(text: str) -> list[dict]:
-    """Return [{page_num, total, markdown}, ...] from a note file's body."""
+    """Return [{page_num, total, markdown, search_context}, ...] from a note file's body."""
     _, body = parse_frontmatter(text)
-    return [
-        {"page_num": int(m[0]), "total": int(m[1]), "markdown": m[2].strip()}
-        for m in _PAGE_RE.findall(body)
-    ]
+    pages = []
+    for m in _PAGE_RE.findall(body):
+        markdown, context = split_context(m[2])
+        pages.append({"page_num": int(m[0]), "total": int(m[1]),
+                      "markdown": markdown, "search_context": context})
+    return pages
 
 
 def source_type(text: str) -> str:

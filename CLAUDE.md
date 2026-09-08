@@ -67,8 +67,8 @@ mdnotes prefs   # inspect remembered folder sync preferences
 | `pipeline.py` | Orchestration: Drive walk, staleness checks, download, resume, transcription loop; `progress`/`should_stop`/`root_id` for the GUI |
 | `drive.py` | Google Drive API: `list_folder_children` (browse any depth), `walk_folders`, `find_goodnotes_folder_id`, list items, download PDF |
 | `rasterize.py` | `pdf_page_count`, `pdf_page_hash` (SHA-256 of raw content stream), `rasterize_page` (pdftoppm → JPEG bytes) |
-| `transcribe.py` | Claude Haiku vision call; `transcribe_page` accepts a `cache_key` to decouple hash from image bytes |
-| `notefmt.py` | Owns the `.md` file format: frontmatter + page-block parse/build (source of truth) |
+| `transcribe.py` | Claude Haiku vision call; one call returns `(markdown, search_context)`: the faithful transcription plus a hidden, grounded plain-language search aid; `cache_key` decouples hash from image bytes |
+| `notefmt.py` | Owns the `.md` file format: frontmatter + page-block parse/build (source of truth), including the hidden per-page `mdnotes:context` search block |
 | `cache.py` | `TranscriptionCache` — JSON dict on disk, keyed by page hash |
 | `auth.py` | Google OAuth2 flow, returns Drive service |
 | `prefs.py` | Folder sync preferences (`yes`/`no`) and settings (`folder_id`, `folder_name`, `output_dir`) in `~/.config/mdnotes/prefs.json` |
@@ -84,6 +84,8 @@ mdnotes prefs   # inspect remembered folder sync preferences
 The note file format is owned by `notefmt.py` (`parse_frontmatter`, `parse_pages`, `build_note`). All read/write of the format goes through it; the search index is derived from these files. Reads stay backward-compatible with the pre-frontmatter `<!-- mdnotes: synced/in progress -->` comment headers.
 
 `drive_mtime` records the source PDF version so staleness/resume can detect a changed PDF; `status: in_progress` marks an interrupted sync (always re-synced next run). Page blocks are `<!-- page N/total -->` delimited, joined by `\n\n---\n\n`; the page regex requires the separator to be followed by a page marker, so a bare `---` inside transcribed content does not split a page.
+
+Each page may carry a hidden, index-only enrichment block after its markdown: `<!-- mdnotes:context\n<grounded plain-language summary + expanded notation>\n-->`. It is never displayed (the reader shows the PDF); `index.py` embeds and FTS-indexes `markdown + search_context` together to bridge terse math notation and natural-language queries. `parse_pages` returns it as `search_context` and strips it from the displayed `markdown`.
 
 **Completed file:**
 ```

@@ -27,7 +27,7 @@ def test_run_pipeline_creates_markdown_files(tmp_path):
          patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
          patch("mdnotes.pipeline.pdf_page_hash", return_value="abc123"), \
          patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# Math Notes\n- item"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# Math Notes\n- item", "")), \
          patch("builtins.input", return_value="y"):
 
         result = run_pipeline(
@@ -58,7 +58,7 @@ def test_sync_no_prompt_auto_indexes(tmp_path):
          patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
          patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
          patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# body"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# body", "")), \
          patch("mdnotes.index.NoteIndex", return_value=idx):
         # no builtins.input patch: assume_yes must not prompt
         result = run_pipeline(
@@ -85,7 +85,7 @@ def test_sync_excludes_named_folder(tmp_path):
          patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
          patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
          patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# b", "")):
         result = run_pipeline(
             service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
             cache_path=tmp_path / "c.json", assume_yes=True, exclude={"CS 3110"},
@@ -118,7 +118,7 @@ def test_noninteractive_honors_prefs_default_ignore(tmp_path):
          patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
          patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
          patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# b", "")):
         result = run_pipeline(
             service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
             cache_path=tmp_path / "c.json", interactive=False,
@@ -141,7 +141,7 @@ def test_noninteractive_select_pref_falls_back_to_default(tmp_path):
              ([], [_file_meta(name="z.pdf", fid="f9")]),                # MATH 3360 (non-empty)
          ]), \
          patch("mdnotes.pipeline.download_pdf") as mock_dl, \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# b", "")):
         result = run_pipeline(
             service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
             cache_path=tmp_path / "c.json", interactive=False,  # default_choice=NO
@@ -177,7 +177,7 @@ def test_progress_events_emitted(tmp_path):
          patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
          patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
          patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
-         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# b", "")):
         run_pipeline(service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
                      cache_path=tmp_path / "c.json", assume_yes=True,
                      progress=lambda e: events.append(e["type"]))

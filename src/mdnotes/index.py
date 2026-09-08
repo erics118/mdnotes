@@ -18,6 +18,12 @@ def content_hash(markdown: str) -> str:
     return hashlib.sha256(markdown.encode()).hexdigest()
 
 
+def _embed_text(page: dict) -> str:
+    """Text used for embedding and FTS: the markdown plus the hidden search context."""
+    ctx = page.get("search_context") or ""
+    return f"{page['markdown']}\n\n{ctx}".strip() if ctx else page["markdown"]
+
+
 def _fts_query(text: str) -> str:
     """Turn free text into a lenient FTS5 MATCH expression (any term, quoted)."""
     words = _WORD.findall(text)
@@ -93,7 +99,8 @@ class NoteIndex:
         missing_text: list[str] = []
         missing_hash: list[str] = []
         for p in pages:
-            ch = content_hash(p["markdown"])
+            embed_text = _embed_text(p)
+            ch = content_hash(embed_text)
             if ch in blobs:
                 continue
             row = db.execute(
@@ -103,7 +110,7 @@ class NoteIndex:
             if row is not None:
                 blobs[ch] = row[0]
             else:
-                missing_text.append(p["markdown"])
+                missing_text.append(embed_text)
                 missing_hash.append(ch)
         if missing_text:
             vectors = embed_documents(missing_text, client=self._embed_client)
@@ -123,15 +130,18 @@ class NoteIndex:
                 (note_id, title, path, source_type, drive_mtime, now),
             )
             for p in pages:
-                ch = content_hash(p["markdown"])
+                embed_text = _embed_text(p)
+                ch = content_hash(embed_text)
                 cur = db.execute(
                     "insert into pages(note_id,page_num,total,content_hash,markdown) values(?,?,?,?,?)",
                     (note_id, p["page_num"], p.get("total"), ch, p["markdown"]),
                 )
                 pid = cur.lastrowid
+                # index the hidden search context alongside the markdown so its
+                # plain-language terms are searchable (FTS) and embedded (vec)
                 db.execute(
                     "insert into pages_fts(rowid, markdown, title) values(?,?,?)",
-                    (pid, p["markdown"], title),
+                    (pid, embed_text, title),
                 )
                 db.execute(
                     "insert or replace into embeddings(content_hash,model,dim,vector) values(?,?,?,?)",
