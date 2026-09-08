@@ -1,11 +1,15 @@
 # src/mdnotes/cli.py
+from datetime import datetime, timezone
 from pathlib import Path
 import click
 from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
 from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
-from mdnotes.index import NoteIndex, DEFAULT_INDEX, HANDWRITTEN, parse_note_pages
+from mdnotes.index import (
+    NoteIndex, DEFAULT_INDEX, HANDWRITTEN, TEXTBOOK, parse_note_pages, detect_source_type,
+)
 from mdnotes.search import search as run_search
+from mdnotes.textbook import extract_pdf_pages
 
 DEFAULT_DPI = 200
 
@@ -109,7 +113,7 @@ def index_cmd(output_dir, index_path, rebuild):
             continue
         note_id = md.relative_to(out).as_posix()
         idx.upsert_note(note_id, title=md.stem, pages=pages,
-                        path=str(md), source_type=HANDWRITTEN)
+                        path=str(md), source_type=detect_source_type(text))
         count += 1
         click.echo(f"indexed {note_id} ({len(pages)} pages)")
     click.echo(f"\nindexed {count} notes -> {index_path}")
@@ -130,6 +134,41 @@ def search_cmd(query, top_k, index_path):
     for h in hits:
         click.echo(f"[{h.score:.3f}] {h.title} (p{h.page_num}) [{h.source_type}]")
         click.echo(f"    {h.snippet}\n")
+
+
+@main.command(name="ingest-pdf")
+@click.argument("pdf_path", type=click.Path(exists=True))
+@click.option("--type", "source_type", default=TEXTBOOK, show_default=True,
+              help="Source type label stored with the note.")
+@click.option("--output-dir", default=None,
+              help="Directory to write the extracted .md into.")
+@click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
+              help="Path to the SQLite search index.")
+def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
+    """Ingest a printed PDF (e.g. a textbook) via its text layer into the search index."""
+    p = SyncPrefs()
+    if output_dir is None:
+        output_dir = p.get_setting("output_dir") or str(Path.home() / "notes")
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    pdf = Path(pdf_path)
+    pages = extract_pdf_pages(pdf)
+    if not pages:
+        click.echo("No extractable text layer found; this PDF may be scanned images.")
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    blocks = [f"<!-- page {pg['page_num']}/{pg['total']} -->\n{pg['markdown']}" for pg in pages]
+    md_text = (f"<!-- mdnotes: source: {source_type} -->\n"
+               f"<!-- mdnotes: synced: {now} -->\n\n" + "\n\n---\n\n".join(blocks))
+    md_path = out / f"{pdf.stem}.md"
+    md_path.write_text(md_text)
+
+    idx = NoteIndex(Path(index_path))
+    idx.upsert_note(md_path.relative_to(out).as_posix(), title=pdf.stem, pages=pages,
+                    path=str(md_path), source_type=source_type)
+    click.echo(f"ingested {pdf.name}: {len(pages)} pages -> {md_path}")
 
 
 @main.command()

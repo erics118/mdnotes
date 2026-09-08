@@ -18,6 +18,12 @@ _PAGE_RE = re.compile(
     r"<!-- page (\d+)/(\d+) -->\n(.*?)(?=\n\n---\n\n<!-- page |\n\n<!-- mdnotes|\Z)",
     re.DOTALL,
 )
+_SOURCE_RE = re.compile(r"<!-- mdnotes: source: (\w+) -->")
+
+
+def detect_source_type(text: str) -> str:
+    m = _SOURCE_RE.search(text)
+    return m.group(1) if m else HANDWRITTEN
 
 
 def content_hash(markdown: str) -> str:
