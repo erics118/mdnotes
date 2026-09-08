@@ -45,6 +45,31 @@ def test_run_pipeline_creates_markdown_files(tmp_path):
     assert result.skipped == []
 
 
+def test_sync_no_prompt_auto_indexes(tmp_path):
+    """assume_yes syncs without prompting and indexes each finalized note."""
+    pdf_path = tmp_path / "Math Notes.pdf"
+    pdf_path.write_bytes(b"%PDF fake")
+    idx = MagicMock()
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="folder1"), \
+         patch("mdnotes.pipeline.list_items", side_effect=[([], [_file_meta()])]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf_path), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
+         patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
+         patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value="# body"), \
+         patch("mdnotes.index.NoteIndex", return_value=idx):
+        # no builtins.input patch: assume_yes must not prompt
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes 5",
+            cache_path=tmp_path / "c.json", assume_yes=True, index_path=tmp_path / "idx.db",
+        )
+
+    assert result.processed == ["Math Notes.pdf"]
+    idx.upsert_note.assert_called_once()
+    assert idx.upsert_note.call_args[0][0] == "Math Notes.md"  # root-relative note_id
+
+
 def test_run_pipeline_skips_up_to_date_files(tmp_path):
     """If .md has a synced header matching Drive modifiedTime, skip the file."""
     mtime = "2024-01-01T00:00:00.000000Z"

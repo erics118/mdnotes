@@ -31,7 +31,14 @@ def main():
               help="Show what would be synced without downloading or transcribing.")
 @click.option("--only-download", is_flag=True, default=False,
               help="Download and check per-page cache but skip transcription.")
-def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
+@click.option("--no-prompt", is_flag=True, default=False,
+              help="Sync every folder and file without prompting (grab everything).")
+@click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
+              help="Search index to update as notes are transcribed.")
+@click.option("--no-index", is_flag=True, default=False,
+              help="Skip updating the search index during sync.")
+def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
+         no_prompt, index_path, no_index):
     """Download PDFs from Google Drive and transcribe handwriting to Markdown."""
     p = SyncPrefs()
 
@@ -75,6 +82,8 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download):
         dpi=dpi,
         dry_run=dry_run,
         only_download=only_download,
+        assume_yes=no_prompt,
+        index_path=None if no_index else Path(index_path),
     )
 
     if result.processed:

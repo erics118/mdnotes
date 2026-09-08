@@ -43,3 +43,29 @@ def test_get_drive_service_refreshes_expired_token(tmp_path, monkeypatch):
         (tmp_path / "token.json").write_text("{}")
         get_drive_service()
         mock_creds.refresh.assert_called_once_with(mock_request())
+
+
+def test_get_drive_service_reauths_when_refresh_fails(tmp_path, monkeypatch):
+    """A revoked/expired refresh token falls back to the browser login, not a crash."""
+    monkeypatch.setattr("mdnotes.auth.TOKEN_PATH", tmp_path / "token.json")
+    monkeypatch.setattr("mdnotes.auth.CREDS_PATH", tmp_path / "client_secret.json")
+
+    dead = MagicMock()
+    dead.valid = False
+    dead.expired = True
+    dead.refresh_token = "revoked"
+    dead.refresh.side_effect = Exception("invalid_grant")
+
+    fresh = MagicMock()
+    fresh.to_json.return_value = "{}"
+    mock_flow = MagicMock()
+    mock_flow.run_local_server.return_value = fresh
+
+    with patch("mdnotes.auth.Credentials.from_authorized_user_file", return_value=dead), \
+         patch("mdnotes.auth.Request"), \
+         patch("mdnotes.auth.InstalledAppFlow.from_client_secrets_file", return_value=mock_flow), \
+         patch("mdnotes.auth.build") as mock_build:
+        (tmp_path / "token.json").write_text("{}")
+        get_drive_service()
+        mock_flow.run_local_server.assert_called_once()
+        mock_build.assert_called_once_with("drive", "v3", credentials=fresh)

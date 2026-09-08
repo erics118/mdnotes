@@ -18,9 +18,15 @@ def get_drive_service():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
 
     if not creds or not creds.valid:
+        refreshed = False
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+                refreshed = True
+            except Exception:
+                # refresh token revoked/expired -> fall back to a fresh browser login
+                creds = None
+        if not refreshed:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
         TOKEN_PATH.write_text(creds.to_json())

@@ -100,7 +100,7 @@ def _ask_folder(name: str, indent: str, folder_id: str, prefs: SyncPrefs,
 
 def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionCache,
                client: anthropic.Anthropic, result: PipelineResult, dpi: int, indent: str,
-               only_download: bool = False) -> None:
+               only_download: bool = False, note_index=None, root_output: Path | None = None) -> None:
     """Download, rasterize, transcribe, and save one PDF, page by page with cache.
 
     only_download: download and check per-page cache but skip transcription and writing.
@@ -201,14 +201,27 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
             else:
                 # Write final file: frontmatter (no in-progress status) then page blocks
                 synced = datetime.now(timezone.utc).strftime(_DT_FMT)
-                md_path.write_text(build_note(
+                final_text = build_note(
                     {"source_type": HANDWRITTEN,
                      "drive_mtime": file_meta["modifiedTime"],
                      "synced": synced},
                     pages_done,
-                ))
+                )
+                md_path.write_text(final_text)
                 result.processed.append(name)
                 print(f"{indent}  Done → {md_path}")
+                if note_index is not None and root_output is not None:
+                    try:
+                        note_id = md_path.relative_to(root_output).as_posix()
+                        note_index.upsert_note(
+                            note_id, title=md_path.stem, pages=parse_pages(final_text),
+                            path=str(md_path), source_type=HANDWRITTEN,
+                            drive_mtime=file_meta["modifiedTime"],
+                        )
+                        print(f"{indent}  Indexed")
+                    except Exception as ie:
+                        print(f"{indent}  Index error: {ie}")
+                        result.errors.append(f"{name} (index): {ie}")
         except Exception as exc:
             print(f"{indent}  Error: {exc}")
             result.errors.append(f"{name}: {exc}")
@@ -219,7 +232,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                  prefs: SyncPrefs, result: PipelineResult, dpi: int,
                  indent: str = "", mode: str | None = None,
                  dry_run: bool = False, only_download: bool = False,
-                 folder_path: str | None = None) -> None:
+                 folder_path: str | None = None, assume_yes: bool = False,
+                 note_index=None, root_output: Path | None = None) -> None:
     """
     Recursively sync a Drive folder.
     mode: "yes" = sync all without asking, "no" = skip all, None = ask
@@ -234,7 +248,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         if not subfolders and not pdfs:
             print(f"{indent}Folder '{folder_name}' is empty, skipping")
             return
-        mode = _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
+        mode = YES if assume_yes else _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
 
     if mode == NO:
         result.skipped.append(folder_name)
@@ -253,6 +267,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             mode=mode if mode == YES else None,  # propagate "yes" but re-ask in "select"/"no" mode
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{full_path} / {sub['name']}",
+            assume_yes=assume_yes, note_index=note_index, root_output=root_output,
         )
 
     # Sync PDFs
@@ -281,7 +296,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                 result.processed.append(name)
         else:
             _sync_file(service, pdf, folder_output, cache, client, result, dpi, indent,
-                       only_download=only_download)
+                       only_download=only_download, note_index=note_index, root_output=root_output)
 
 
 def run_pipeline(
@@ -292,6 +307,8 @@ def run_pipeline(
     dpi: int = 150,
     dry_run: bool = False,
     only_download: bool = False,
+    assume_yes: bool = False,
+    index_path: Path | None = None,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -301,6 +318,12 @@ def run_pipeline(
     client = None if (dry_run or only_download) else anthropic.Anthropic()
     prefs = SyncPrefs()
     result = PipelineResult()
+
+    # Build the search index inline so a sync also indexes each note as it finalizes
+    note_index = None
+    if index_path is not None and not (dry_run or only_download):
+        from mdnotes.index import NoteIndex
+        note_index = NoteIndex(Path(index_path))
 
     if dry_run:
         print("(dry run — nothing will be downloaded or transcribed)\n")
@@ -318,6 +341,7 @@ def run_pipeline(
             cache, client, prefs, result, dpi,
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{folder_name} / {sub['name']}",
+            assume_yes=assume_yes, note_index=note_index, root_output=output_dir,
         )
 
     # PDFs sitting directly in the root (not in a subfolder)
@@ -329,16 +353,17 @@ def run_pipeline(
             print(f"'{name}' — up-to-date, skipping")
             result.skipped.append(name)
             continue
-        answer = input(f"Sync '{name}'? [y/N] ").strip().lower()
-        if answer != "y":
-            print(f"Skipping '{name}'")
-            result.skipped.append(name)
-            continue
+        if not assume_yes:
+            answer = input(f"Sync '{name}'? [y/N] ").strip().lower()
+            if answer != "y":
+                print(f"Skipping '{name}'")
+                result.skipped.append(name)
+                continue
         if dry_run:
             print(f"'{name}' — would sync")
             result.processed.append(name)
         else:
             _sync_file(service, pdf, output_dir, cache, client, result, dpi, indent="",
-                       only_download=only_download)
+                       only_download=only_download, note_index=note_index, root_output=output_dir)
 
     return result
