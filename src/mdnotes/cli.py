@@ -172,6 +172,19 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8000, show_default=True, type=int)
+@click.option("--index-path", default=str(DEFAULT_INDEX), show_default=True,
+              help="Path to the SQLite search index to serve.")
+def serve(host, port, index_path):
+    """Run the search web server (FastAPI)."""
+    import os
+    import uvicorn
+    os.environ["MDNOTES_INDEX"] = index_path
+    uvicorn.run("mdnotes.server:app", host=host, port=port)
+
+
+@main.command()
 def prefs():
     """View and edit remembered folder sync preferences."""
     p = SyncPrefs()
