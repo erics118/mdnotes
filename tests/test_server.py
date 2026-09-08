@@ -73,6 +73,64 @@ def test_pdf_404_when_missing(tmp_path):
     assert r.status_code == 404
 
 
+def test_status_shape():
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None), \
+         patch.object(server, "_drive_or_none", return_value=None), \
+         patch.object(server, "_index") as idx:
+        idx.return_value.courses.return_value = []
+        r = client.get("/api/status")
+    assert r.status_code == 200
+    b = r.json()
+    assert b["authed"] is False
+    assert "has_anthropic_key" in b and "has_voyage_key" in b
+    assert b["sync"]["running"] is False
+
+
+def test_folders_requires_drive():
+    client = TestClient(server.app)
+    with patch.object(server, "PASSWORD", None), patch.object(server, "_drive_or_none", return_value=None):
+        r = client.get("/api/folders")
+    assert r.status_code == 409
+
+
+def test_folders_lists_with_choice():
+    client = TestClient(server.app)
+    prefs = MagicMock()
+    prefs.get.side_effect = lambda fid: {"c1": "no"}.get(fid)  # CS 2800 ignored
+    with patch.object(server, "PASSWORD", None), \
+         patch.object(server, "_drive_or_none", return_value=MagicMock()), \
+         patch.object(server, "find_goodnotes_folder_id", return_value="root"), \
+         patch.object(server, "walk_folders", return_value=[
+             {"id": "c1", "name": "CS 2800", "path": "CS 2800", "parent_id": None},
+             {"id": "c2", "name": "MATH 3360", "path": "MATH 3360", "parent_id": None}]), \
+         patch.object(server, "_prefs", return_value=prefs):
+        r = client.get("/api/folders")
+    assert r.status_code == 200
+    by = {f["name"]: f["choice"] for f in r.json()["folders"]}
+    assert by["CS 2800"] == "ignore" and by["MATH 3360"] == "default"
+
+
+def test_set_folder_pref():
+    client = TestClient(server.app)
+    prefs = MagicMock()
+    with patch.object(server, "PASSWORD", None), patch.object(server, "_prefs", return_value=prefs):
+        r = client.post("/api/folders", json={"folder_id": "c1", "name": "CS 2800", "choice": "sync"})
+    assert r.status_code == 200
+    prefs.set.assert_called_once()
+
+
+def test_sync_conflict_when_running():
+    client = TestClient(server.app)
+    server._sync["running"] = True
+    try:
+        with patch.object(server, "PASSWORD", None):
+            r = client.post("/api/sync")
+        assert r.status_code == 409
+    finally:
+        server._sync["running"] = False
+
+
 def test_search_passes_course():
     client = TestClient(server.app)
     with patch.object(server, "PASSWORD", None), \

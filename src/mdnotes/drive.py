@@ -35,6 +35,21 @@ def list_items(service, folder_id: str) -> tuple[list[dict], list[dict]]:
     return folders, pdfs
 
 
+def walk_folders(service, root_id: str) -> list[dict]:
+    """Return every folder under root_id as a flat list of {id, name, path, parent_id}."""
+    out: list[dict] = []
+
+    def rec(folder_id, parent_id, prefix):
+        subfolders, _ = list_items(service, folder_id)
+        for s in subfolders:
+            path = f"{prefix}/{s['name']}" if prefix else s["name"]
+            out.append({"id": s["id"], "name": s["name"], "path": path, "parent_id": parent_id})
+            rec(s["id"], s["id"], path)
+
+    rec(root_id, None, "")
+    return out
+
+
 def download_pdf(service, file_id: str, file_name: str, output_dir: Path) -> Path:
     """Download a Drive file by ID to output_dir. Returns the local path."""
     dest = output_dir / file_name

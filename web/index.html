@@ -10,318 +10,279 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <style>
   :root {
-    --bg: #fbfbfa; --panel: #fff; --text: #1a1a1a; --muted: #6b6b6b; --border: #e6e6e3;
-    --accent: #2f6f4f; --accent-soft: #e8f1ec; --chip: #f0f0ee; --shadow: 0 1px 3px rgba(0,0,0,.06);
+    --bg:#fbfbfa; --panel:#fff; --text:#1a1a1a; --muted:#6b6b6b; --border:#e6e6e3;
+    --accent:#2f6f4f; --accent-soft:#e8f1ec; --chip:#f0f0ee; --danger:#b3402f; --shadow:0 1px 3px rgba(0,0,0,.06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #16171a; --panel: #1e2024; --text: #e9e9e7; --muted: #9a9a97; --border: #2c2f34;
-      --accent: #6fb992; --accent-soft: #22302a; --chip: #24262b; --shadow: 0 1px 3px rgba(0,0,0,.3);
+      --bg:#16171a; --panel:#1e2024; --text:#e9e9e7; --muted:#9a9a97; --border:#2c2f34;
+      --accent:#6fb992; --accent-soft:#22302a; --chip:#24262b; --danger:#e0846f; --shadow:0 1px 3px rgba(0,0,0,.3);
     }
   }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text); height: 100vh;
-    display: flex; flex-direction: column; overflow: hidden;
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  header { flex: none; background: var(--bg); border-bottom: 1px solid var(--border); padding: 12px 20px; }
-  .wrap { max-width: 860px; margin: 0 auto; }
-  .brand { font-weight: 700; letter-spacing: -.02em; font-size: 17px; margin-bottom: 10px; }
-  .brand span { color: var(--accent); }
-  #q { width: 100%; padding: 11px 14px; font-size: 16px; border-radius: 10px;
-       border: 1px solid var(--border); background: var(--panel); color: var(--text); outline: none; }
-  #q:focus { border-color: var(--accent); }
-  .chips { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
-  .chip { flex: none; border: 1px solid var(--border); background: var(--chip); color: var(--text);
-          padding: 5px 13px; border-radius: 20px; cursor: pointer; font-size: 13px; white-space: nowrap; }
-  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  #main { flex: 1; overflow: auto; }
-  .content { max-width: 860px; margin: 0 auto; padding: 16px 20px 60px; }
-  .status { color: var(--muted); font-size: 13px; padding: 6px 2px; }
-  .empty { color: var(--muted); text-align: center; padding: 56px 0; }
-
-  /* browse tree */
-  details.course { margin-bottom: 6px; }
-  details > summary { cursor: pointer; padding: 8px 6px; border-radius: 8px; list-style: none;
-    display: flex; align-items: center; gap: 8px; font-weight: 600; }
-  details > summary::-webkit-details-marker { display: none; }
-  details > summary:hover { background: var(--accent-soft); }
-  .tri { color: var(--muted); font-size: 11px; transition: transform .12s; }
-  details[open] > summary > .tri { transform: rotate(90deg); }
-  .count { color: var(--muted); font-weight: 400; font-size: 12px; }
-  .tree-children { padding-left: 16px; border-left: 1px solid var(--border); margin-left: 10px; }
-  .note-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
-  .note-row:hover { background: var(--accent-soft); }
-  .note-name { flex: 1; }
-
-  /* search results */
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 13px 15px; margin-bottom: 11px; box-shadow: var(--shadow); cursor: pointer; transition: border-color .12s; }
-  .card:hover { border-color: var(--accent); }
-  .crumb { color: var(--muted); font-size: 12px; margin-bottom: 3px; }
-  .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap; }
-  .title { font-weight: 600; }
-  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .badge.pg { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-  .snippet { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
-
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column;
+    overflow:hidden; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { flex:none; border-bottom:1px solid var(--border); padding:10px 20px; }
+  .wrap { max-width:860px; margin:0 auto; display:flex; align-items:center; gap:16px; }
+  .brand { font-weight:700; letter-spacing:-.02em; font-size:17px; }
+  .brand span { color:var(--accent); }
+  nav { display:flex; gap:4px; }
+  .tab { border:0; background:none; color:var(--muted); font:inherit; padding:6px 12px; border-radius:8px; cursor:pointer; }
+  .tab.active { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  main { flex:1; overflow:auto; }
+  .content { max-width:860px; margin:0 auto; padding:16px 20px 60px; }
+  .status { color:var(--muted); font-size:13px; padding:6px 2px; }
+  .empty { color:var(--muted); text-align:center; padding:48px 0; }
+  input[type=search],input[type=text] { width:100%; padding:11px 14px; font-size:16px; border-radius:10px;
+    border:1px solid var(--border); background:var(--panel); color:var(--text); outline:none; }
+  input:focus { border-color:var(--accent); }
+  button.btn { border:1px solid var(--accent); background:var(--accent); color:#fff; font:inherit;
+    padding:8px 16px; border-radius:8px; cursor:pointer; }
+  button.btn:disabled { opacity:.5; cursor:default; }
+  button.ghost { border:1px solid var(--border); background:var(--panel); color:var(--text); padding:6px 12px;
+    border-radius:8px; cursor:pointer; font:inherit; }
+  .chips { display:flex; gap:8px; margin:10px 0; overflow-x:auto; }
+  .chip { flex:none; border:1px solid var(--border); background:var(--chip); color:var(--text); padding:5px 13px;
+    border-radius:20px; cursor:pointer; font-size:13px; white-space:nowrap; }
+  .chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:13px 15px;
+    margin-bottom:11px; box-shadow:var(--shadow); cursor:pointer; }
+  .card:hover { border-color:var(--accent); }
+  .crumb { color:var(--muted); font-size:12px; margin-bottom:3px; }
+  .card-top { display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap; }
+  .title { font-weight:600; } .snippet { color:var(--muted); font-size:14px; overflow-wrap:anywhere; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:20px; background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  .badge.pg { background:transparent; color:var(--muted); border:1px solid var(--border); }
+  details.node { margin-bottom:2px; }
+  summary { cursor:pointer; padding:7px 6px; border-radius:8px; list-style:none; display:flex; align-items:center; gap:8px; }
+  summary::-webkit-details-marker { display:none; }
+  summary:hover { background:var(--accent-soft); }
+  .tri { color:var(--muted); font-size:11px; } details[open]>summary>.tri { transform:rotate(90deg); }
+  .tree-children { padding-left:16px; border-left:1px solid var(--border); margin-left:10px; }
+  .fname { flex:1; }
+  .seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; background:var(--panel); color:var(--muted); font:inherit; font-size:12px; padding:4px 10px; cursor:pointer; }
+  .seg button.on-sync { background:var(--accent); color:#fff; }
+  .seg button.on-ignore { background:var(--danger); color:#fff; }
+  .box { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .ok { color:var(--accent); } .bad { color:var(--danger); }
+  label.f { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
   /* reader */
-  #reader { flex: 1; display: none; flex-direction: column; min-height: 0; }
-  #reader.on { display: flex; }
-  .reader-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
-  .back { border: 1px solid var(--border); background: var(--panel); color: var(--text);
-    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 14px; }
-  .back:hover { border-color: var(--accent); }
-  .reader-title { font-weight: 600; }
-  .reader-crumb { color: var(--muted); font-size: 12px; }
-  #reader-body { flex: 1; min-height: 0; overflow: auto; }
-  #reader-body iframe { width: 100%; height: 100%; border: 0; display: block; }
-  .fallback { max-width: 860px; margin: 0 auto; padding: 16px 20px 60px; }
-  .note-banner { background: var(--accent-soft); color: var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 16px; }
-  .md :is(h1,h2,h3){ line-height: 1.25; } .md table{ border-collapse: collapse; }
-  .md th,.md td{ border: 1px solid var(--border); padding: 4px 8px; }
-  .md pre{ overflow-x: auto; background: var(--chip); padding: 10px; border-radius: 8px; }
-  .page { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 22px; }
-  .page:first-of-type { border-top: none; margin-top: 0; }
-  .page-label { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  #reader { position:fixed; inset:0; background:var(--bg); display:none; flex-direction:column; z-index:20; }
+  #reader.on { display:flex; }
+  .reader-bar { flex:none; display:flex; align-items:center; gap:12px; padding:10px 20px; border-bottom:1px solid var(--border); }
+  #reader-body { flex:1; min-height:0; overflow:auto; }
+  #reader-body iframe { width:100%; height:100%; border:0; display:block; }
+  .fallback { max-width:860px; margin:0 auto; padding:16px 20px 60px; }
+  .note-banner { background:var(--accent-soft); color:var(--accent); border-radius:8px; padding:10px 12px; font-size:13px; margin-bottom:16px; }
+  .md :is(h1,h2,h3){ line-height:1.25; } .md table{ border-collapse:collapse; }
+  .md th,.md td{ border:1px solid var(--border); padding:4px 8px; } .md pre{ overflow-x:auto; background:var(--chip); padding:10px; border-radius:8px; }
+  .page { border-top:1px solid var(--border); padding-top:6px; margin-top:22px; } .page:first-of-type{ border-top:none; margin-top:0; }
+  .page-label { color:var(--muted); font-size:12px; margin-bottom:4px; }
 </style>
 </head>
 <body>
-<header>
-  <div class="wrap">
-    <div class="brand">md<span>notes</span></div>
-    <input id="q" type="search" placeholder="Search..." autocomplete="off" autofocus>
-    <div class="chips" id="chips"></div>
-  </div>
-</header>
-<div id="main"><div class="content" id="content"><div class="status">Loading...</div></div></div>
+<header><div class="wrap">
+  <div class="brand">md<span>notes</span></div>
+  <nav>
+    <button class="tab active" data-view="search">Search</button>
+    <button class="tab" data-view="folders">Folders</button>
+    <button class="tab" data-view="setup">Setup</button>
+  </nav>
+</div></header>
+<main><div class="content" id="content"></div></main>
+
 <div id="reader">
-  <div class="reader-bar">
-    <button class="back" id="back">&larr; Back</button>
-    <div><div class="reader-title" id="reader-title"></div><div class="reader-crumb" id="reader-crumb"></div></div>
-  </div>
+  <div class="reader-bar"><button class="ghost" id="back">&larr; Back</button>
+    <div><div class="title" id="reader-title"></div><div class="crumb" id="reader-crumb"></div></div></div>
   <div id="reader-body"></div>
 </div>
 
 <script>
-const $ = (s) => document.querySelector(s);
-const mainEl = $("#main"), contentEl = $("#content"), readerEl = $("#reader");
-const qEl = $("#q"), chipsEl = $("#chips");
+const $ = (s)=>document.querySelector(s);
+const content = $("#content"), readerEl = $("#reader");
+const S = { view:"search", courses:[], notes:[], course:null, query:"", cache:new Map(), listScroll:0, status:null };
 
-const state = {
-  courses: [], notes: [], course: null, query: "",
-  cache: new Map(),            // `${course||''}\n${query}` -> results
-  listScroll: 0,               // saved scroll to restore on Back
-};
-
-// ---- auth (single password; stored per session) ----
-function pw() { try { return sessionStorage.getItem("mdnotes_pw"); } catch { return null; } }
-function authHeader() { const p = pw(); return p ? { Authorization: "Basic " + btoa(":" + p) } : {}; }
-function pwParam() { const p = pw(); return p ? "&pw=" + encodeURIComponent(p) : ""; }
-
-async function api(path, opts = {}) {
-  let r = await fetch(path, { ...opts, headers: { ...authHeader(), ...(opts.headers || {}) } });
-  if (r.status === 401) {
-    const p = prompt("Password:");
-    if (p === null) throw new Error("auth cancelled");
-    try { sessionStorage.setItem("mdnotes_pw", p); } catch {}
-    r = await fetch(path, { ...opts, headers: { ...authHeader(), ...(opts.headers || {}) } });
-  }
-  if (!r.ok) throw new Error("HTTP " + r.status);
+// auth
+function pw(){ try{return sessionStorage.getItem("mdnotes_pw");}catch{return null;} }
+function authHeader(){ const p=pw(); return p?{Authorization:"Basic "+btoa(":"+p)}:{}; }
+function pwParam(){ const p=pw(); return p?"&pw="+encodeURIComponent(p):""; }
+async function api(path, opts={}){
+  let r = await fetch(path,{...opts,headers:{...authHeader(),...(opts.headers||{})}});
+  if(r.status===401){ const p=prompt("Password:"); if(p===null) throw new Error("auth cancelled");
+    try{sessionStorage.setItem("mdnotes_pw",p);}catch{} r=await fetch(path,{...opts,headers:{...authHeader(),...(opts.headers||{})}}); }
   return r;
 }
+async function jget(path){ const r=await api(path); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||("HTTP "+r.status)); return r.json(); }
+async function jpost(path,body){ const r=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail||("HTTP "+r.status)); return r.json(); }
 
-// ---- helpers ----
-const encId = (id) => encodeURIComponent(id).replace(/%2F/g, "/");
-function parts(noteId) { return noteId.replace(/\.md$/, "").split("/"); }
-function crumb(noteId) { const p = parts(noteId); return p.slice(0, -1).join(" › "); }
-function titleOf(noteId) { const p = parts(noteId); return p[p.length - 1]; }
+const encId=(id)=>encodeURIComponent(id).replace(/%2F/g,"/");
+const parts=(id)=>id.replace(/\.md$/,"").split("/");
+const crumb=(id)=>parts(id).slice(0,-1).join(" › ");
+const titleOf=(id)=>parts(id).slice(-1)[0];
+function renderMath(el){ if(window.renderMathInElement) renderMathInElement(el,{delimiters:[{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],throwOnError:false}); }
 
-function renderMath(el) {
-  if (window.renderMathInElement)
-    renderMathInElement(el, { delimiters: [
-      { left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false },
-    ], throwOnError: false });
-}
+// nav
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>setView(t.dataset.view));
+function setView(v){ S.view=v; document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.view===v));
+  if(v==="search") renderSearchView(); else if(v==="folders") renderFolders(); else renderSetup(); }
 
-// ---- data load ----
-async function boot() {
-  try {
-    const [c, n] = await Promise.all([
-      api("/api/courses").then(r => r.json()),
-      api("/api/notes").then(r => r.json()),
-    ]);
-    state.courses = c.courses || [];
-    state.notes = n.notes || [];
-    renderChips();
-    renderList();
-  } catch (e) { contentEl.innerHTML = `<div class="empty">${e.message}</div>`; }
-}
-
-function renderChips() {
-  const mk = (label, value) => {
-    const el = document.createElement("div");
-    el.className = "chip" + (state.course === value ? " active" : "");
-    el.textContent = label;
-    el.onclick = () => { state.course = value; renderChips(); renderList(); };
-    return el;
-  };
-  chipsEl.innerHTML = "";
-  chipsEl.appendChild(mk("All courses", null));
-  for (const c of state.courses) chipsEl.appendChild(mk(c, c));
-}
-
-// route between browse and search based on query
-function renderList() {
-  if (state.query.trim()) renderResults();
-  else renderBrowse();
-}
-
-// ---- browse tree ----
-function buildTree(notes) {
-  const root = { dirs: {}, files: [] };
-  for (const n of notes) {
-    const p = parts(n.note_id);
-    let node = root;
-    for (let i = 0; i < p.length - 1; i++) {
-      node.dirs[p[i]] = node.dirs[p[i]] || { dirs: {}, files: [] };
-      node = node.dirs[p[i]];
-    }
-    node.files.push({ ...n, name: p[p.length - 1] });
+// ================= SEARCH / BROWSE =================
+async function renderSearchView(){
+  content.innerHTML = `<input id="q" type="search" placeholder="Search..." autocomplete="off">
+    <div class="chips" id="chips"></div><div id="list"></div>`;
+  const q=$("#q"); q.value=S.query; q.focus();
+  let t; q.addEventListener("input",()=>{clearTimeout(t); t=setTimeout(()=>{S.query=q.value; routeList();},220);});
+  if(!S.courses.length && !S.notes.length){
+    try{ const [c,n]=await Promise.all([jget("/api/courses"),jget("/api/notes")]); S.courses=c.courses||[]; S.notes=n.notes||[]; }catch(e){}
   }
-  return root;
+  renderChips(); routeList();
 }
-function countLeaves(node) {
-  let n = node.files.length;
-  for (const k in node.dirs) n += countLeaves(node.dirs[k]);
-  return n;
+function renderChips(){
+  const box=$("#chips"); if(!box) return; box.innerHTML="";
+  const mk=(label,val)=>{ const e=document.createElement("div"); e.className="chip"+(S.course===val?" active":""); e.textContent=label;
+    e.onclick=()=>{S.course=val; renderChips(); routeList();}; return e; };
+  box.appendChild(mk("All courses",null)); for(const c of S.courses) box.appendChild(mk(c,c));
 }
-function renderTree(node, container, depth) {
-  const dirNames = Object.keys(node.dirs).sort();
-  for (const name of dirNames) {
-    const child = node.dirs[name];
-    const det = document.createElement("details");
-    det.className = "course";
-    if (depth === 0) det.open = state.course != null; // expand sections when a course is picked
-    const sum = document.createElement("summary");
-    sum.innerHTML = `<span class="tri">▶</span><span>${name}</span><span class="count">${countLeaves(child)}</span>`;
-    det.appendChild(sum);
-    const kids = document.createElement("div");
-    kids.className = "tree-children";
-    renderTree(child, kids, depth + 1);
-    det.appendChild(kids);
-    container.appendChild(det);
-  }
-  for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
-    const row = document.createElement("div");
-    row.className = "note-row";
-    row.innerHTML = `<span class="note-name"></span><span class="badge">${f.source_type}</span><span class="count">${f.page_count}p</span>`;
-    row.querySelector(".note-name").textContent = f.name;
-    row.onclick = () => openReader(f.note_id, 1);
-    container.appendChild(row);
-  }
+function routeList(){ if(S.query.trim()) renderResults(); else renderBrowse(); }
+function buildTree(notes){ const root={dirs:{},files:[]};
+  for(const n of notes){ const p=parts(n.note_id); let node=root;
+    for(let i=0;i<p.length-1;i++){ node.dirs[p[i]]=node.dirs[p[i]]||{dirs:{},files:[]}; node=node.dirs[p[i]]; }
+    node.files.push({...n,name:p[p.length-1]}); } return root; }
+function countLeaves(n){ let c=n.files.length; for(const k in n.dirs) c+=countLeaves(n.dirs[k]); return c; }
+function renderTreeInto(node,el,depth){
+  for(const name of Object.keys(node.dirs).sort()){ const child=node.dirs[name];
+    const d=document.createElement("details"); d.className="node"; if(depth===0) d.open=S.course!=null;
+    const s=document.createElement("summary"); s.innerHTML=`<span class="tri">▶</span><span>${name}</span><span class="status">${countLeaves(child)}</span>`;
+    d.appendChild(s); const kids=document.createElement("div"); kids.className="tree-children"; renderTreeInto(child,kids,depth+1); d.appendChild(kids); el.appendChild(d); }
+  for(const f of node.files.sort((a,b)=>a.name.localeCompare(b.name))){ const row=document.createElement("div"); row.className="card"; row.style.padding="8px 12px"; row.style.margin="4px 0";
+    row.innerHTML=`<span class="fname"></span> <span class="badge">${f.source_type}</span> <span class="status">${f.page_count}p</span>`;
+    row.querySelector(".fname").textContent=f.name; row.onclick=()=>openReader(f.note_id,1); el.appendChild(row); }
 }
-function renderBrowse() {
-  const notes = state.course ? state.notes.filter(n => parts(n.note_id)[0] === state.course) : state.notes;
-  contentEl.innerHTML = "";
-  if (!notes.length) { contentEl.innerHTML = `<div class="empty">No notes.</div>`; return; }
-  const tree = buildTree(notes);
-  // when a course is selected, skip the redundant top course node
-  const rootNode = state.course && tree.dirs[state.course] ? tree.dirs[state.course] : tree;
-  renderTree(rootNode, contentEl, 0);
+function renderBrowse(){ const list=$("#list"); if(!list) return;
+  const notes=S.course?S.notes.filter(n=>parts(n.note_id)[0]===S.course):S.notes;
+  list.innerHTML=""; if(!notes.length){ list.innerHTML=`<div class="empty">No notes yet. Go to Setup to connect Drive and sync.</div>`; return; }
+  const tree=buildTree(notes); const rootNode=S.course&&tree.dirs[S.course]?tree.dirs[S.course]:tree; renderTreeInto(rootNode,list,0); }
+let seq=0;
+async function renderResults(){ const key=(S.course||"")+"\n"+S.query.trim(); const list=$("#list"); if(!list) return;
+  if(S.cache.has(key)){ paint(S.cache.get(key)); return; } const mine=++seq; list.innerHTML=`<div class="status">Searching...</div>`;
+  try{ const url="/api/search?q="+encodeURIComponent(S.query.trim())+(S.course?"&course="+encodeURIComponent(S.course):"");
+    const d=await jget(url); if(mine!==seq) return; S.cache.set(key,d.results||[]); paint(d.results||[]); }
+  catch(e){ if(mine===seq) list.innerHTML=`<div class="empty">${e.message}</div>`; }
+  function paint(hits){ list.innerHTML=""; if(!hits.length){ list.innerHTML=`<div class="empty">No matches.</div>`; return; }
+    const st=document.createElement("div"); st.className="status"; st.textContent=`${hits.length} results`; list.appendChild(st);
+    for(const h of hits){ const c=document.createElement("div"); c.className="card";
+      c.innerHTML=`<div class="crumb"></div><div class="card-top"><span class="title"></span><span class="badge">${h.source_type}</span><span class="badge pg">page ${h.page_num}</span></div><div class="snippet"></div>`;
+      c.querySelector(".crumb").textContent=crumb(h.note_id); c.querySelector(".title").textContent=h.title;
+      c.querySelector(".snippet").textContent=h.snippet; renderMath(c.querySelector(".snippet"));
+      c.onclick=()=>openReader(h.note_id,h.page_num); list.appendChild(c); } }
 }
 
-// ---- search (cached) ----
-let searchSeq = 0;
-async function renderResults() {
-  const key = (state.course || "") + "\n" + state.query.trim();
-  if (state.cache.has(key)) { paintResults(state.cache.get(key)); return; }
-  const mine = ++searchSeq;
-  contentEl.innerHTML = `<div class="status">Searching...</div>`;
-  try {
-    const url = "/api/search?q=" + encodeURIComponent(state.query.trim())
-      + (state.course ? "&course=" + encodeURIComponent(state.course) : "");
-    const data = await api(url).then(r => r.json());
-    if (mine !== searchSeq) return;
-    state.cache.set(key, data.results || []);
-    paintResults(data.results || []);
-  } catch (e) { if (mine === searchSeq) contentEl.innerHTML = `<div class="empty">${e.message}</div>`; }
+// ================= READER =================
+async function openReader(noteId,page){ S.listScroll=$("main").scrollTop; history.pushState({reader:noteId},""); await showReader(noteId,page); }
+async function showReader(noteId,page){
+  readerEl.classList.add("on"); $("#reader-title").textContent=titleOf(noteId); $("#reader-crumb").textContent=crumb(noteId);
+  const body=$("#reader-body"); body.innerHTML=`<div class="fallback"><div class="status">Loading...</div></div>`;
+  let hasPdf=false; try{ hasPdf=(await fetch("/api/pdf/"+encId(noteId)+"?_=1"+pwParam(),{method:"HEAD",headers:authHeader()})).ok; }catch{}
+  if(hasPdf){ body.innerHTML=`<iframe src="/api/pdf/${encId(noteId)}?_=1${pwParam()}#page=${page}" title="pdf"></iframe>`; return; }
+  try{ const d=await jget("/api/note/"+encId(noteId)); const wrap=document.createElement("div"); wrap.className="fallback";
+    const b=document.createElement("div"); b.className="note-banner"; b.textContent="PDF not on disk yet - showing transcribed text. Sync to view the original page."; wrap.appendChild(b);
+    for(const pg of d.pages){ const div=document.createElement("div"); div.className="page";
+      div.innerHTML=`<div class="page-label">page ${pg.page_num}/${pg.total||"?"}</div><div class="md"></div>`;
+      const md=div.querySelector(".md"); md.innerHTML=window.marked?marked.parse(pg.markdown):pg.markdown; wrap.appendChild(div); renderMath(md);
+      if(pg.page_num===page) setTimeout(()=>div.scrollIntoView({block:"start"}),40); }
+    body.innerHTML=""; body.appendChild(wrap);
+  }catch(e){ body.innerHTML=`<div class="fallback"><div class="empty">${e.message}</div></div>`; }
 }
-function paintResults(hits) {
-  contentEl.innerHTML = "";
-  if (!hits.length) { contentEl.innerHTML = `<div class="empty">No matches.</div>`; return; }
-  const st = document.createElement("div"); st.className = "status"; st.textContent = `${hits.length} results`;
-  contentEl.appendChild(st);
-  for (const h of hits) {
-    const card = document.createElement("div"); card.className = "card";
-    card.innerHTML =
-      `<div class="crumb"></div>` +
-      `<div class="card-top"><span class="title"></span><span class="badge">${h.source_type}</span>` +
-      `<span class="badge pg">page ${h.page_num}</span></div><div class="snippet"></div>`;
-    card.querySelector(".crumb").textContent = crumb(h.note_id);
-    card.querySelector(".title").textContent = h.title;
-    card.querySelector(".snippet").textContent = h.snippet;
-    renderMath(card.querySelector(".snippet"));
-    card.onclick = () => openReader(h.note_id, h.page_num);
-    contentEl.appendChild(card);
+function closeReader(){ readerEl.classList.remove("on"); $("#reader-body").innerHTML=""; $("main").scrollTop=S.listScroll; }
+$("#back").onclick=()=>history.back();
+window.addEventListener("popstate",()=>{ if(readerEl.classList.contains("on")) closeReader(); });
+
+// ================= FOLDERS =================
+async function renderFolders(){
+  content.innerHTML=`<div class="status">Loading folders...</div>`;
+  let data; try{ data=await jget("/api/folders"); }
+  catch(e){ content.innerHTML=`<div class="box"><b>Can't list folders.</b><div class="status">${e.message}</div>
+    <div class="row" style="margin-top:10px"><button class="btn" onclick="setView('setup')">Go to Setup</button></div></div>`; return; }
+  content.innerHTML=`<div class="status">Toggle which folders to sync. Ignored folders (and their contents) are skipped. Default follows the parent (ignored at top level).</div><div id="ftree"></div>`;
+  const tree={dirs:{},node:{}};
+  // build nested structure from paths
+  const root={children:{}, id:null};
+  for(const f of data.folders){ const segs=f.path.split("/"); let node=root;
+    for(let i=0;i<segs.length;i++){ const seg=segs[i]; node.children[seg]=node.children[seg]||{children:{},id:null,name:seg};
+      node=node.children[seg]; if(i===segs.length-1){ node.id=f.id; node.choice=f.choice; node.fullpath=f.path; } } }
+  const box=$("#ftree"); renderFolderNodes(root,box,0);
+}
+function renderFolderNodes(node,el,depth){
+  for(const name of Object.keys(node.children).sort()){ const c=node.children[name];
+    const d=document.createElement("details"); d.className="node"; d.open=depth<1;
+    const s=document.createElement("summary");
+    s.innerHTML=`<span class="tri">▶</span><span class="fname">${name}</span>`;
+    if(c.id){ s.appendChild(segControl(c)); }
+    d.appendChild(s);
+    if(Object.keys(c.children).length){ const kids=document.createElement("div"); kids.className="tree-children"; renderFolderNodes(c,kids,depth+1); d.appendChild(kids); }
+    el.appendChild(d);
   }
 }
-
-// ---- reader ----
-async function openReader(noteId, page) {
-  state.listScroll = mainEl.scrollTop;
-  history.pushState({ reader: noteId, page }, "");
-  showReader(noteId, page);
+function segControl(c){
+  const seg=document.createElement("span"); seg.className="seg"; seg.onclick=(e)=>e.stopPropagation();
+  const states=[["sync","Sync"],["ignore","Ignore"],["default","Default"]];
+  for(const [val,label] of states){ const b=document.createElement("button"); b.textContent=label;
+    if(c.choice===val) b.classList.add(val==="sync"?"on-sync":val==="ignore"?"on-ignore":"");
+    b.onclick=async()=>{ try{ await jpost("/api/folders",{folder_id:c.id,name:c.fullpath,choice:val}); c.choice=val;
+      seg.querySelectorAll("button").forEach((x,i)=>{ x.className=""; if(states[i][0]===val) x.classList.add(val==="sync"?"on-sync":val==="ignore"?"on-ignore":""); });
+    }catch(e){ alert(e.message); } }; seg.appendChild(b); }
+  return seg;
 }
-async function showReader(noteId, page) {
-  readerEl.classList.add("on"); mainEl.style.display = "none";
-  $("#reader-title").textContent = titleOf(noteId);
-  $("#reader-crumb").textContent = crumb(noteId);
-  const body = $("#reader-body");
-  body.innerHTML = `<div class="fallback"><div class="status">Loading...</div></div>`;
-  // prefer the real PDF; fall back to transcribed markdown if not on disk yet
-  let hasPdf = false;
-  try { hasPdf = (await fetch("/api/pdf/" + encId(noteId) + "?_=1" + pwParam(), { method: "HEAD", headers: authHeader() })).ok; } catch {}
-  if (hasPdf) {
-    const src = "/api/pdf/" + encId(noteId) + "?_=1" + pwParam() + "#page=" + page;
-    body.innerHTML = `<iframe src="${src}" title="pdf"></iframe>`;
-    return;
-  }
-  try {
-    const data = await api("/api/note/" + encId(noteId)).then(r => r.json());
-    const wrap = document.createElement("div"); wrap.className = "fallback";
-    const banner = document.createElement("div"); banner.className = "note-banner";
-    banner.textContent = "PDF not on disk yet - showing transcribed text. Re-sync to view the original page.";
-    wrap.appendChild(banner);
-    for (const pg of data.pages) {
-      const div = document.createElement("div"); div.className = "page";
-      div.innerHTML = `<div class="page-label">page ${pg.page_num}/${pg.total || "?"}</div><div class="md"></div>`;
-      const md = div.querySelector(".md");
-      md.innerHTML = window.marked ? marked.parse(pg.markdown) : pg.markdown;
-      wrap.appendChild(div); renderMath(md);
-      if (pg.page_num === page) setTimeout(() => div.scrollIntoView({ block: "start" }), 40);
-    }
-    body.innerHTML = ""; body.appendChild(wrap);
-  } catch (e) { body.innerHTML = `<div class="fallback"><div class="empty">${e.message}</div></div>`; }
-}
-function closeReader() {
-  readerEl.classList.remove("on"); mainEl.style.display = "";
-  $("#reader-body").innerHTML = "";
-  mainEl.scrollTop = state.listScroll; // restore without re-searching
-}
-$("#back").onclick = () => history.back();
-window.addEventListener("popstate", () => { if (readerEl.classList.contains("on")) closeReader(); });
 
-// ---- search input (debounced) ----
-let t;
-qEl.addEventListener("input", () => {
-  clearTimeout(t);
-  t = setTimeout(() => { state.query = qEl.value; renderList(); }, 220);
-});
+// ================= SETUP =================
+async function renderSetup(){
+  content.innerHTML=`<div class="status">Loading...</div>`;
+  let st; try{ st=await jget("/api/status"); }catch(e){ content.innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  S.status=st;
+  const authed=st.authed;
+  content.innerHTML=`
+    <div class="box">
+      <div class="row"><b>Google Drive</b> ${authed?'<span class="ok">connected</span>':'<span class="bad">not connected</span>'}</div>
+      ${authed?'<div class="status">Token is valid.</div>':'<button class="btn" id="connect">Connect Google Drive</button><div class="status" id="authmsg">Opens a Google sign-in in your browser.</div>'}
+    </div>
+    <div class="box">
+      <div class="row"><b>API keys</b></div>
+      <div class="status">Anthropic: ${st.has_anthropic_key?'<span class="ok">set</span>':'<span class="bad">missing (MDNOTES_ANTHROPIC_API_KEY)</span>'} &nbsp; Voyage: ${st.has_voyage_key?'<span class="ok">set</span>':'<span class="bad">missing (MDNOTES_VOYAGE_API_KEY)</span>'}</div>
+    </div>
+    <div class="box">
+      <div class="row"><b>Settings</b></div>
+      <label class="f">GoodNotes folder name in Drive</label><input id="fname" type="text" value="${st.folder_name||""}">
+      <label class="f">Output directory</label><input id="odir" type="text" value="${st.output_dir||""}">
+      <div class="row" style="margin-top:12px"><button class="ghost" id="savecfg">Save settings</button></div>
+    </div>
+    <div class="box">
+      <div class="row"><b>Sync</b> <span id="syncstate" class="status"></span></div>
+      <div class="status">Pulls the folders marked Sync, transcribes, keeps PDFs, and indexes.</div>
+      <div class="row" style="margin-top:12px"><button class="btn" id="syncnow" ${authed?"":"disabled"}>Sync now</button></div>
+      <div id="syncresult"></div>
+    </div>`;
+  if(!authed) $("#connect").onclick=async()=>{ $("#connect").disabled=true; $("#authmsg").textContent="Waiting for Google sign-in...";
+    try{ await jpost("/api/auth/login"); pollAuth(); }catch(e){ $("#authmsg").textContent=e.message; $("#connect").disabled=false; } };
+  $("#savecfg").onclick=async()=>{ try{ await jpost("/api/settings",{folder_name:$("#fname").value,output_dir:$("#odir").value}); $("#savecfg").textContent="Saved"; setTimeout(()=>$("#savecfg").textContent="Save settings",1200);}catch(e){alert(e.message);} };
+  const syncBtn=$("#syncnow"); if(syncBtn) syncBtn.onclick=async()=>{ try{ await jpost("/api/sync"); pollSync(); }catch(e){ alert(e.message);} };
+  refreshSync(st.sync);
+}
+async function pollAuth(){ const st=await jget("/api/status"); if(st.auth_running){ setTimeout(pollAuth,1500); return; }
+  if(st.authed){ renderSetup(); } else { const m=$("#authmsg"); if(m) m.textContent="Sign-in failed: "+(st.auth_error||"unknown"); const c=$("#connect"); if(c) c.disabled=false; } }
+async function pollSync(){ const st=await jget("/api/sync/status"); refreshSync(st); if(st.running){ setTimeout(pollSync,2000); }
+  else { S.cache.clear(); S.notes=[]; S.courses=[]; } }
+function refreshSync(sync){ const s=$("#syncstate"), r=$("#syncresult"), b=$("#syncnow"); if(!s) return;
+  if(sync&&sync.running){ s.textContent="running..."; if(b) b.disabled=true; }
+  else { s.textContent=""; if(b) b.disabled=!(S.status&&S.status.authed);
+    if(sync&&sync.error && r) r.innerHTML=`<div class="status bad">${sync.error}</div>`;
+    else if(sync&&sync.result && r) r.innerHTML=`<div class="status">Done: ${sync.result.processed.length} synced, ${sync.result.skipped.length} skipped, ${sync.result.errors.length} errors.</div>`; }
+}
 
-boot();
+renderSearchView();
 </script>
 </body>
 </html>

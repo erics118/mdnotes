@@ -4,6 +4,7 @@ from datetime import timezone
 from unittest.mock import MagicMock, patch, call
 import pytest
 from mdnotes.pipeline import run_pipeline, PipelineResult, _is_up_to_date, _drive_mtime
+from mdnotes.prefs import SyncPrefs
 
 
 def _file_meta(name="Math Notes.pdf", mtime="2024-01-01T00:00:00.000000Z", fid="f1"):
@@ -92,6 +93,40 @@ def test_sync_excludes_named_folder(tmp_path):
 
     assert "CS 3110" in result.skipped
     assert "note.pdf" in result.processed
+
+
+def test_noninteractive_honors_prefs_default_ignore(tmp_path):
+    """Non-interactive sync: pref YES syncs, pref NO/unset skipped, no input() called."""
+    pdf_path = tmp_path / "note.pdf"
+    pdf_path.write_bytes(b"%PDF")
+
+    prefs = SyncPrefs(path=tmp_path / "prefs.json")
+    prefs.set("a", "yes", name="MATH 2210")   # sync
+    prefs.set("b", "no", name="CS 3110")       # ignore
+    # folder "c" (MATH 4130) has no pref -> default ignore
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.SyncPrefs", return_value=prefs), \
+         patch("mdnotes.pipeline.list_items", side_effect=[
+             ([{"id": "a", "name": "MATH 2210"}, {"id": "b", "name": "CS 3110"},
+               {"id": "c", "name": "MATH 4130"}], []),                 # root
+             ([], [_file_meta(name="note.pdf", fid="f2")]),            # MATH 2210 (synced)
+             ([], [_file_meta(name="x.pdf", fid="f3")]),               # CS 3110 (non-empty, ignored)
+             ([], [_file_meta(name="y.pdf", fid="f4")]),               # MATH 4130 (non-empty, default ignore)
+         ]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf_path), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
+         patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
+         patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value="# b"):
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+            cache_path=tmp_path / "c.json", interactive=False,
+        )
+
+    assert "note.pdf" in result.processed        # MATH 2210 (yes) synced
+    assert "CS 3110" in result.skipped           # explicit no
+    assert "MATH 4130" in result.skipped         # unset -> default ignore
 
 
 def test_run_pipeline_skips_up_to_date_files(tmp_path):

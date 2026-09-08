@@ -2,7 +2,19 @@
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 import pytest
-from mdnotes.drive import download_pdf, find_goodnotes_folder_id, list_items
+from mdnotes.drive import download_pdf, find_goodnotes_folder_id, list_items, walk_folders
+
+
+def test_walk_folders_recurses():
+    tree = {
+        "root": ([{"id": "c1", "name": "CS 2800"}, {"id": "c2", "name": "MATH 3360"}], []),
+        "c1": ([{"id": "c1a", "name": "lecture"}], []),
+        "c1a": ([], []),
+        "c2": ([], []),
+    }
+    with patch("mdnotes.drive.list_items", side_effect=lambda svc, fid: tree.get(fid, ([], []))):
+        folders = walk_folders(object(), "root")
+    assert sorted(f["path"] for f in folders) == ["CS 2800", "CS 2800/lecture", "MATH 3360"]
 
 
 def test_find_goodnotes_folder_id_returns_id(mock_drive_service):

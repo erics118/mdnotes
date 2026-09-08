@@ -235,7 +235,8 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
                  dry_run: bool = False, only_download: bool = False,
                  folder_path: str | None = None, assume_yes: bool = False,
                  note_index=None, root_output: Path | None = None,
-                 exclude: set[str] | None = None) -> None:
+                 exclude: set[str] | None = None,
+                 interactive: bool = True, default_choice: str = NO) -> None:
     """
     Recursively sync a Drive folder.
     mode: "yes" = sync all without asking, "no" = skip all, None = ask
@@ -254,7 +255,15 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         if not subfolders and not pdfs:
             print(f"{indent}Folder '{folder_name}' is empty, skipping")
             return
-        mode = YES if assume_yes else _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
+        if assume_yes:
+            mode = YES
+        elif not interactive:
+            # web/scheduled sync: resolve from saved prefs, no prompting; SELECT means include
+            mode = prefs.get(folder_id) or default_choice
+            if mode == SELECT:
+                mode = YES
+        else:
+            mode = _ask_folder(folder_name, indent, folder_id, prefs, full_path=full_path)
 
     if mode == NO:
         result.skipped.append(folder_name)
@@ -274,7 +283,7 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{full_path} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=root_output,
-            exclude=exclude,
+            exclude=exclude, interactive=interactive, default_choice=default_choice,
         )
 
     # Sync PDFs
@@ -317,6 +326,8 @@ def run_pipeline(
     assume_yes: bool = False,
     index_path: Path | None = None,
     exclude: set[str] | None = None,
+    interactive: bool = True,
+    default_choice: str = NO,
 ) -> PipelineResult:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -351,7 +362,7 @@ def run_pipeline(
             dry_run=dry_run, only_download=only_download,
             folder_path=f"{folder_name} / {sub['name']}",
             assume_yes=assume_yes, note_index=note_index, root_output=output_dir,
-            exclude=exclude,
+            exclude=exclude, interactive=interactive, default_choice=default_choice,
         )
 
     # PDFs sitting directly in the root (not in a subfolder)
@@ -363,7 +374,7 @@ def run_pipeline(
             print(f"'{name}' — up-to-date, skipping")
             result.skipped.append(name)
             continue
-        if not assume_yes:
+        if interactive and not assume_yes:
             answer = input(f"Sync '{name}'? [y/N] ").strip().lower()
             if answer != "y":
                 print(f"Skipping '{name}'")
