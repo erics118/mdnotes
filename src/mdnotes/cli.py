@@ -5,6 +5,7 @@ import click
 from mdnotes.auth import get_drive_service
 from mdnotes.pipeline import run_pipeline, DEFAULT_CACHE
 from mdnotes.prefs import SyncPrefs, CHOICE_LABELS
+from mdnotes.config import DEFAULT_NOTES
 from mdnotes.index import NoteIndex, DEFAULT_INDEX
 from mdnotes.notefmt import TEXTBOOK, build_note, page_block, parse_pages, source_type as detect_source_type
 from mdnotes.search import search as run_search
@@ -59,7 +60,7 @@ def sync(output_dir, folder_name, dpi, cache, dry_run, only_download,
 
     # Resolve output_dir: CLI flag > saved pref > default
     if output_dir is None:
-        output_dir = saved_output or str(Path.home() / "notes")
+        output_dir = saved_output or str(DEFAULT_NOTES)
 
     # Resolve dpi: CLI flag > saved pref > default
     if dpi is None:
@@ -110,7 +111,7 @@ def index_cmd(output_dir, index_path, rebuild):
     """Build or refresh the search index from transcribed .md notes."""
     p = SyncPrefs()
     if output_dir is None:
-        output_dir = p.get_setting("output_dir") or str(Path.home() / "notes")
+        output_dir = p.get_setting("output_dir") or str(DEFAULT_NOTES)
     out = Path(output_dir)
     idx = NoteIndex(Path(index_path))
 
@@ -160,7 +161,7 @@ def ingest_pdf_cmd(pdf_path, source_type, output_dir, index_path):
     """Ingest a printed PDF (e.g. a textbook) via its text layer into the search index."""
     p = SyncPrefs()
     if output_dir is None:
-        output_dir = p.get_setting("output_dir") or str(Path.home() / "notes")
+        output_dir = p.get_setting("output_dir") or str(DEFAULT_NOTES)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
