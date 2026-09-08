@@ -151,6 +151,34 @@ def test_noninteractive_select_pref_falls_back_to_default(tmp_path):
     assert "MATH 3360" in result.skipped
 
 
+def test_explicit_ignore_overrides_parent_sync(tmp_path):
+    """A child folder marked 'no' must be skipped even when its parent is marked 'yes'."""
+    pdf_path = tmp_path / "note.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    prefs = SyncPrefs(path=tmp_path / "prefs.json")
+    prefs.set("p", "yes", name="MATH 3360")        # course: sync
+    prefs.set("c", "no", name="MATH 3360/dis")     # subfolder: explicitly ignore
+
+    with patch("mdnotes.pipeline.find_goodnotes_folder_id", return_value="root"), \
+         patch("mdnotes.pipeline.SyncPrefs", return_value=prefs), \
+         patch("mdnotes.pipeline.list_items", side_effect=[
+             ([{"id": "p", "name": "MATH 3360"}], []),                       # root
+             ([{"id": "c", "name": "dis"}], [_file_meta(name="lec.pdf", fid="f1")]),  # MATH 3360: dis + a lecture pdf
+         ]), \
+         patch("mdnotes.pipeline.download_pdf", return_value=pdf_path), \
+         patch("mdnotes.pipeline.pdf_page_count", return_value=1), \
+         patch("mdnotes.pipeline.pdf_page_hash", return_value="h"), \
+         patch("mdnotes.pipeline.rasterize_page", return_value=b"img"), \
+         patch("mdnotes.pipeline.transcribe_page", return_value=("# b", "")):
+        result = run_pipeline(
+            service=MagicMock(), output_dir=tmp_path, folder_name="GoodNotes",
+            cache_path=tmp_path / "c.json", interactive=False,
+        )
+
+    assert "lec.pdf" in result.processed   # the synced course's own pdf
+    assert "dis" in result.skipped         # explicitly ignored child, despite parent 'yes'
+
+
 def test_run_pipeline_uses_root_id_directly(tmp_path):
     with patch("mdnotes.pipeline.find_goodnotes_folder_id") as find, \
          patch("mdnotes.pipeline.list_items", return_value=([], [])):

@@ -276,6 +276,12 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
         print(f"{indent}Folder '{folder_name}' excluded, skipping")
         result.skipped.append(folder_name)
         return
+    # an explicit "ignore" on this folder always wins, even when a parent folder is
+    # marked "sync" and propagated mode=YES down to here
+    if not assume_yes and prefs.get(folder_id) == NO:
+        print(f"{indent}Folder '{folder_name}' ignored (explicit), skipping")
+        result.skipped.append(folder_name)
+        return
     subfolders, pdfs = list_items(service, folder_id)
 
     if mode is None:
