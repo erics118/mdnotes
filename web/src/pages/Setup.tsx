@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLogin, useSaveSettings, useStartSync, useStatus, useStopSync } from "../lib/queries";
 import type { DriveFolder } from "../lib/api";
@@ -112,27 +112,68 @@ export default function Setup() {
 
 function SyncStatus() {
   const { data: s } = useStatus();
-  if (!s) return null;
-  const { sync } = s;
-  if (sync.running) {
-    const p = sync.progress;
-    const file = p?.file ?? "scanning...";
-    const pages = p?.pages ? ` - page ${p.page}/${p.pages}` : "";
-    return (
-      <div className="mt-2 text-[13px] text-muted">
-        {sync.stopping ? "stopping after current page - " : ""}{p?.done ?? 0} done - {file}{pages}
-      </div>
-    );
-  }
-  if (sync.error) return <div className="mt-2 text-[13px] text-danger">{sync.error}</div>;
-  if (sync.result)
-    return (
-      <div className="mt-2 text-[13px] text-muted">
-        {sync.result.stopped ? "Stopped. " : "Done. "}
-        {sync.result.processed.length} synced, {sync.result.skipped.length} skipped, {sync.result.errors.length} errors.
-      </div>
-    );
-  return null;
+  const logRef = useRef<HTMLDivElement>(null);
+  const sync = s?.sync;
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [sync?.log?.length]);
+  if (!sync) return null;
+
+  const p = sync.progress;
+  const doneCount = p?.done ?? 0;
+  const planCount = sync.plan?.length ?? 0;
+  const doneSet = new Set((sync.log ?? []).filter((l) => l.level === "done" && l.path).map((l) => l.path));
+  const current = sync.running ? p?.file ?? null : null;
+  const base = (path: string) => path.replace(/\.md$/, "").split("/").slice(-1)[0];
+
+  return (
+    <div className="mt-3">
+      {sync.running && (
+        <div className="mb-2 text-[13px] text-muted">
+          {sync.stopping ? "stopping after current page - " : ""}
+          {doneCount}{planCount ? `/${planCount}` : ""} done
+          {p?.file ? <> - {p.kind === "text" ? "extracting text" : "transcribing"} <b className="text-ink">{base(p.file)}</b>{p.pages ? ` (page ${p.page}/${p.pages})` : ""}</> : " - scanning..."}
+        </div>
+      )}
+      {!sync.running && sync.error && <div className="mb-2 text-[13px] text-danger">{sync.error}</div>}
+      {!sync.running && sync.result && (
+        <div className="mb-2 text-[13px] text-muted">
+          {sync.result.stopped ? "Stopped. " : "Done. "}
+          {sync.result.processed.length} synced, {sync.result.skipped.length} skipped, {sync.result.errors.length} errors.
+        </div>
+      )}
+
+      {/* Plan: what it will do / is doing / has done */}
+      {planCount > 0 && (
+        <div className="mb-2 max-h-52 overflow-auto rounded-lg border border-line bg-panel p-2 text-[12px]">
+          <div className="mb-1 font-semibold text-muted">Plan ({doneCount}/{planCount})</div>
+          {sync.plan.map((path) => {
+            const st = doneSet.has(path) ? "done" : path === current ? "current" : "next";
+            return (
+              <div key={path} className="flex items-center gap-2 py-0.5">
+                <span className={st === "done" ? "text-accent" : st === "current" ? "text-ink" : "text-muted"}>
+                  {st === "done" ? "✓" : st === "current" ? "▶" : "·"}
+                </span>
+                <span className={`truncate ${st === "next" ? "text-muted" : "text-ink"}`}>{path}</span>
+                {st === "current" && <span className="ml-auto flex-none text-[11px] text-muted"><Spinner /></span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Full event log */}
+      {(sync.log?.length ?? 0) > 0 && (
+        <div ref={logRef} className="max-h-52 overflow-auto rounded-lg border border-line bg-[#1113] p-2 font-mono text-[11px] leading-relaxed">
+          {sync.log.map((l, i) => (
+            <div key={i} className={l.level === "error" ? "text-danger" : l.level === "done" ? "text-accent" : "text-muted"}>
+              {l.msg}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Wrap({ children }: { children: React.ReactNode }) {

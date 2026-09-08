@@ -62,11 +62,13 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 // ---- types ----
-export interface SyncProgress { file: string | null; page: number; pages: number; done: number; }
+export interface SyncProgress { file: string | null; page: number; pages: number; done: number; kind?: "text" | "vision" | null; }
 export interface SyncResult { processed: string[]; skipped: string[]; errors: string[]; stopped: boolean; }
+export interface SyncLogEntry { level: "info" | "done" | "error"; msg: string; path: string | null; kind?: "text" | "vision" | null; }
 export interface SyncState {
   running: boolean; started: string | null; result: SyncResult | null;
   error: string | null; progress: SyncProgress | null; stopping: boolean;
+  plan: string[]; log: SyncLogEntry[];
 }
 export interface Status {
   authed: boolean; auth_running: boolean; auth_error: string | null;

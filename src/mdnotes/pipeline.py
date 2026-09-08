@@ -143,14 +143,15 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
             pdf_path = download_pdf(service, file_id=file_meta["id"], file_name=dl_name, output_dir=download_dir)
 
             total = pdf_page_count(pdf_path)
+            # Printed PDFs (textbooks, exam solutions) already have a text layer; extract
+            # it with poppler instead of sending hundreds of pages to Claude vision.
+            printed = (not only_download) and has_text_layer(pdf_path)
             print(f"{indent}  {total} page{'s' if total != 1 else ''}:")
             if progress:
                 progress({"type": "file", "name": name, "path": _rel(md_path, root_output),
-                          "page": 0, "pages": total})
+                          "page": 0, "pages": total, "kind": "text" if printed else "vision"})
 
-            # Printed PDFs (textbooks, exam solutions) already have a text layer; extract
-            # it with poppler instead of sending hundreds of pages to Claude vision.
-            if not only_download and has_text_layer(pdf_path):
+            if printed:
                 print(f"{indent}  text layer detected - extracting as printed PDF (no vision)")
                 tb_pages = extract_pdf_pages(pdf_path)
                 synced = datetime.now(timezone.utc).strftime(_DT_FMT)
@@ -264,7 +265,8 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
                 result.processed.append(name)
                 print(f"{indent}  Done → {md_path}")
                 if progress:
-                    progress({"type": "done", "name": name, "path": _rel(md_path, root_output)})
+                    progress({"type": "done", "name": name, "path": _rel(md_path, root_output),
+                              "kind": "vision"})
                 if note_index is not None and root_output is not None:
                     try:
                         note_id = md_path.relative_to(root_output).as_posix()
@@ -283,6 +285,9 @@ def _sync_file(service, file_meta: dict, output_dir: Path, cache: TranscriptionC
         except Exception as exc:
             print(f"{indent}  Error: {exc}")
             result.errors.append(f"{name}: {exc}")
+            if progress:
+                progress({"type": "error", "name": name, "path": _rel(md_path, root_output),
+                          "msg": str(exc)})
 
 
 def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
@@ -379,6 +384,9 @@ def _sync_folder(service, folder_id: str, folder_name: str, output_dir: Path,
             else:
                 print(f"{indent}  '{name}' — would sync")
                 result.processed.append(name)
+                if progress:
+                    progress({"type": "plan_item", "name": name,
+                              "path": _rel(md_path, root_output)})
         else:
             _sync_file(service, pdf, folder_output, cache, client, result, dpi, indent,
                        only_download=only_download, note_index=note_index, root_output=root_output,
@@ -463,6 +471,8 @@ def run_pipeline(
         if dry_run:
             print(f"'{name}' — would sync")
             result.processed.append(name)
+            if progress:
+                progress({"type": "plan_item", "name": name, "path": _rel(md_path, output_dir)})
         else:
             _sync_file(service, pdf, output_dir, cache, client, result, dpi, indent="",
                        only_download=only_download, note_index=note_index, root_output=output_dir,

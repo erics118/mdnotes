@@ -30,7 +30,7 @@ security = HTTPBasic(auto_error=False)
 
 # background job state (single-user app)
 _sync = {"running": False, "started": None, "result": None, "error": None,
-         "progress": None, "stopping": False}
+         "progress": None, "stopping": False, "plan": [], "log": []}
 _auth = {"running": False, "error": None}
 
 
@@ -207,21 +207,40 @@ def api_sync(_=Depends(require_auth), __=Depends(block_cross_site)):
     # reserve synchronously (before starting the thread) so two fast POSTs can't both pass
     _sync.update(running=True, started=datetime.now(timezone.utc).isoformat(),
                  result=None, error=None, stopping=False,
-                 progress={"file": None, "page": 0, "pages": 0, "done": 0})
+                 progress={"file": None, "page": 0, "pages": 0, "done": 0, "kind": None},
+                 plan=[], log=[])
 
     def job():
         done = {"n": 0}
 
+        def logline(level, msg, path=None, kind=None):
+            _sync["log"].append({"level": level, "msg": msg, "path": path, "kind": kind})
+            if len(_sync["log"]) > 2000:  # keep memory bounded on huge syncs
+                del _sync["log"][:-2000]
+
         def cb(ev):
-            if ev.get("type") == "done":
-                done["n"] += 1
+            t = ev.get("type")
+            path = ev.get("path") or ev.get("name")
+            if t == "plan_item":
+                _sync["plan"].append(path)
+                return
             prev = _sync.get("progress") or {}
-            _sync["progress"] = {
-                "file": ev.get("path") or ev.get("name") or prev.get("file"),
-                "page": ev.get("page", prev.get("page", 0)),
-                "pages": ev.get("pages", prev.get("pages", 0)),
-                "done": done["n"],
-            }
+            if t == "file":
+                kind = ev.get("kind")
+                _sync["progress"] = {"file": path, "page": 0, "pages": ev.get("pages", 0),
+                                     "done": done["n"], "kind": kind}
+                logline("info", f"{'extracting text' if kind == 'text' else 'transcribing'}: {path}", path, kind)
+            elif t == "page":
+                _sync["progress"] = {**prev, "file": path or prev.get("file"),
+                                     "page": ev.get("page", prev.get("page", 0)),
+                                     "pages": ev.get("pages", prev.get("pages", 0)), "done": done["n"]}
+            elif t == "done":
+                done["n"] += 1
+                kind = ev.get("kind")
+                _sync["progress"] = {**prev, "done": done["n"]}
+                logline("done", f"done ({'text' if kind == 'text' else 'vision'}): {path}", path, kind)
+            elif t == "error":
+                logline("error", f"error: {path}: {ev.get('msg')}", path)
 
         try:
             svc = _drive_or_none()
@@ -229,12 +248,19 @@ def api_sync(_=Depends(require_auth), __=Depends(block_cross_site)):
                 raise RuntimeError("not connected to Google Drive")
             if not _folder_id():
                 raise RuntimeError("choose your notes folder in Setup first")
-            res = run_pipeline(
-                service=svc, output_dir=_output_dir(), folder_name=_folder_name() or "notes",
-                root_id=_folder_id(), cache_path=DEFAULT_CACHE, dpi=200, index_path=INDEX_PATH,
-                interactive=False, default_choice=NO,
-                progress=cb, should_stop=lambda: _sync["stopping"],
-            )
+            common = dict(service=svc, output_dir=_output_dir(),
+                          folder_name=_folder_name() or "notes", root_id=_folder_id(),
+                          interactive=False, default_choice=NO,
+                          should_stop=lambda: _sync["stopping"])
+            # plan pass: fast walk (no downloads) to list what will sync
+            try:
+                run_pipeline(**common, cache_path=DEFAULT_CACHE, dpi=200,
+                             index_path=None, dry_run=True, progress=cb)
+            except Exception as pe:
+                print(f"plan pass failed: {pe}")
+            # real pass
+            res = run_pipeline(**common, cache_path=DEFAULT_CACHE, dpi=200,
+                               index_path=INDEX_PATH, progress=cb)
             _sync["result"] = {"processed": res.processed, "skipped": res.skipped,
                                "errors": res.errors, "stopped": _sync["stopping"]}
         except Exception as e:
